@@ -1,0 +1,270 @@
+@import "tailwindcss";
+
+/* Theme is a class on <html> (set before paint by the script in layout.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/*
+ * The edit card is pulled out from under its item: small and diagonal first, then it grows and lifts,
+ * then it is set down beside the item. Closing plays it in reverse (lift, shrink, slide back under).
+ * Board draws a non-interactive copy of the item above the card, so "under" is real layering, not a clip.
+ */
+@keyframes slide-from-left {
+  0% {
+    transform: translate(-96.0%, -40px) scale(0.5) rotate(-8.0deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  42% {
+    transform: translate(-40.0%, 46px) scale(0.56) rotate(-5.0deg);
+    box-shadow: 0 3px 7px rgba(0,0,0,0.3);
+  }
+  76% {
+    transform: translate(3.0%, -10px) scale(1.08) rotate(2.6deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  90% {
+    transform: translate(-0.5%, 2px) scale(1.01) rotate(-0.5deg);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.36);
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+}
+
+@keyframes slide-from-right {
+  0% {
+    transform: translate(96.0%, -40px) scale(0.5) rotate(8.0deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  42% {
+    transform: translate(40.0%, 46px) scale(0.56) rotate(5.0deg);
+    box-shadow: 0 3px 7px rgba(0,0,0,0.3);
+  }
+  76% {
+    transform: translate(-3.0%, -10px) scale(1.08) rotate(-2.6deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  90% {
+    transform: translate(0.5%, 2px) scale(1.01) rotate(0.5deg);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.36);
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+}
+
+@keyframes slide-back-left {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+  25% {
+    transform: translate(2.0%, -10px) scale(1.05) rotate(1.8deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  62% {
+    transform: translate(-40.0%, 44px) scale(0.58) rotate(-5.0deg);
+    box-shadow: 0 3px 7px rgba(0,0,0,0.3);
+  }
+  100% {
+    transform: translate(-98.0%, -40px) scale(0.5) rotate(-8.0deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+}
+
+@keyframes slide-back-right {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+  25% {
+    transform: translate(-2.0%, -10px) scale(1.05) rotate(-1.8deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  62% {
+    transform: translate(40.0%, 44px) scale(0.58) rotate(5.0deg);
+    box-shadow: 0 3px 7px rgba(0,0,0,0.3);
+  }
+  100% {
+    transform: translate(98.0%, -40px) scale(0.5) rotate(8.0deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+}
+
+@keyframes slide-from-top {
+  0% {
+    transform: translate(14px, -98%) scale(0.5) rotate(5deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  42% {
+    transform: translate(-30px, -40%) scale(0.56) rotate(3deg);
+    box-shadow: 0 3px 7px rgba(0,0,0,0.3);
+  }
+  76% {
+    transform: translate(4px, 8px) scale(1.08) rotate(-2.4deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  90% {
+    transform: translate(-1px, -2px) scale(1.01) rotate(0.5deg);
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+}
+
+@keyframes slide-back-top {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  }
+  25% {
+    transform: translate(2px, 8px) scale(1.05) rotate(-1.8deg);
+    box-shadow: 0 20px 34px rgba(0,0,0,0.4);
+  }
+  62% {
+    transform: translate(-30px, -40%) scale(0.58) rotate(3deg);
+  }
+  100% {
+    transform: translate(14px, -98%) scale(0.5) rotate(5deg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+}
+
+.slide-from-left { transform-origin: left center; animation: slide-from-left 820ms ease-out; }
+.slide-from-right { transform-origin: right center; animation: slide-from-right 820ms ease-out; }
+.slide-from-top { transform-origin: center top; animation: slide-from-top 820ms ease-out; }
+
+.slide-back-left { transform-origin: left center; animation: slide-back-left 520ms ease-in forwards; }
+.slide-back-right { transform-origin: right center; animation: slide-back-right 520ms ease-in forwards; }
+.slide-back-top { transform-origin: center top; animation: slide-back-top 520ms ease-in forwards; }
+
+/*
+ * (Keyframe times are remapped through t = 1 - sqrt(1 - progress), so with linear timing the card moves along
+ * its arc at a parabolic speed: fastest at the start, slowing steadily toward the landing.)
+ *
+ * Small items can't hide the card, so it glides in instead: one slow fall along an arc. It starts large with a
+ * big soft shadow (high above the board, close to you), sweeps down and in from further out on the side it will sit on, and as it comes down
+ * it shrinks to normal size while its shadow shrinks and tightens. Leaving, it drifts back out the same way and fades.
+ */
+@keyframes float-in-left {
+  0% {
+    transform: translate(-280px, -170px) rotate(-16deg) scale(1.6);
+    opacity: 0;
+    box-shadow: 0 60px 70px rgba(0, 0, 0, 0.14);
+  }
+  3% {
+    opacity: 1;
+  }
+  6.2% {
+    transform: translate(-262px, -118px) rotate(-14deg) scale(1.55);
+  }
+  13.4% {
+    transform: translate(-222px, -58px) rotate(-11deg) scale(1.45);
+  }
+  22.5% {
+    transform: translate(-164px, -14px) rotate(-8deg) scale(1.32);
+    box-shadow: 0 34px 46px rgba(0, 0, 0, 0.2);
+  }
+  32.9% {
+    transform: translate(-100px, 10px) rotate(-4deg) scale(1.2);
+  }
+  45.2% {
+    transform: translate(-48px, 12px) rotate(0.5deg) scale(1.1);
+    box-shadow: 0 16px 28px rgba(0, 0, 0, 0.28);
+  }
+  57.6% {
+    transform: translate(-18px, 6px) rotate(2.5deg) scale(1.05);
+  }
+  71.7% {
+    transform: translate(-4px, 1px) rotate(0.8deg) scale(1.01);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0) scale(1);
+    opacity: 1;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@keyframes float-in-right {
+  0% {
+    transform: translate(280px, -170px) rotate(16deg) scale(1.6);
+    opacity: 0;
+    box-shadow: 0 60px 70px rgba(0, 0, 0, 0.14);
+  }
+  3% {
+    opacity: 1;
+  }
+  6.2% {
+    transform: translate(262px, -118px) rotate(14deg) scale(1.55);
+  }
+  13.4% {
+    transform: translate(222px, -58px) rotate(11deg) scale(1.45);
+  }
+  22.5% {
+    transform: translate(164px, -14px) rotate(8deg) scale(1.32);
+    box-shadow: 0 34px 46px rgba(0, 0, 0, 0.2);
+  }
+  32.9% {
+    transform: translate(100px, 10px) rotate(4deg) scale(1.2);
+  }
+  45.2% {
+    transform: translate(48px, 12px) rotate(-0.5deg) scale(1.1);
+    box-shadow: 0 16px 28px rgba(0, 0, 0, 0.28);
+  }
+  57.6% {
+    transform: translate(18px, 6px) rotate(-2.5deg) scale(1.05);
+  }
+  71.7% {
+    transform: translate(4px, 1px) rotate(-0.8deg) scale(1.01);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0) scale(1);
+    opacity: 1;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@keyframes float-out-left {
+  0% {
+    transform: translate(0, 0) rotate(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-130px, -60px) rotate(-9deg) scale(1.25);
+    opacity: 0;
+    box-shadow: 0 40px 50px rgba(0, 0, 0, 0.12);
+  }
+}
+
+@keyframes float-out-right {
+  0% {
+    transform: translate(0, 0) rotate(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(130px, -60px) rotate(9deg) scale(1.25);
+    opacity: 0;
+    box-shadow: 0 40px 50px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.float-in-left { animation: float-in-left 1000ms linear; }
+.float-in-right { animation: float-in-right 1000ms linear; }
+.float-out-left { animation: float-out-left 450ms ease-in forwards; }
+.float-out-right { animation: float-out-right 450ms ease-in forwards; }
+
+/* Purely visual copies (the layer drawn above the edit card) must never take clicks. */
+.no-pointer,
+.no-pointer * {
+  pointer-events: none !important;
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Tether Cork Board",
+  "short_name": "Tether",
+  "description": "Plan big projects on a zoomable, spatial cork board.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#c89b6a",
+  "theme_color": "#1c1917",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
