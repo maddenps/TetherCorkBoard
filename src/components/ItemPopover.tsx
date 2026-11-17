@@ -1,6 +1,11 @@
-import { useState } from "react";
-import { PAPER_COLORS } from "@/lib/board";
-import type { Item, ItemKind, Link } from "@/lib/types";
+import { useRef, useState } from "react";
+import { PAPER_COLORS, markerColor } from "@/lib/board";
+import type { BoardStyle } from "@/lib/boardStyle";
+import { PIN_COLORS, PIN_ICONS } from "@/lib/model";
+import type { Item, ItemKind, ItemType, Link } from "@/lib/types";
+import { btn, field, select } from "./cardStyles";
+import ItemFields from "./ItemFields";
+import LinkRow from "./LinkRow";
 
 export const POPOVER_WIDTH = 288;
 
@@ -30,23 +35,24 @@ interface Props {
   leaving: boolean;
   links: Link[];
   itemsById: Map<string, Item>;
+  types: ItemType[];
+  /** Items a pin can point at (everything except the pin itself). */
+  pinTargets: Item[];
   linking: boolean;
+  boardStyle: BoardStyle;
   onPatch: (patch: Partial<Item>) => void;
   onDelete: () => void;
   onZoomTo: () => void;
   onToggleLink: () => void;
   onRemoveLink: (id: string) => void;
+  onPatchLink: (id: string, patch: Partial<Link>) => void;
+  onSetPinTarget: (targetId: string | null) => void;
+  onPickMap: (file: File) => void;
   onAddInside: (kind: ItemKind) => void;
   onClose: () => void;
   /** Called when the slide-back animation has finished. */
   onLeft: () => void;
 }
-
-// The card takes the item's paper colour, so text is always dark ink in both themes.
-const btn =
-  "rounded-sm border border-black/35 bg-white/35 px-2.5 py-1 text-sm font-medium text-stone-800 active:bg-white/70";
-const field =
-  "w-full border-0 border-b-2 border-dashed border-black/35 bg-transparent px-1 py-1 text-stone-900 placeholder:text-stone-500 focus:border-black/70 focus:outline-none";
 
 const ENTER = { right: "slide-from-left", left: "slide-from-right", inside: "slide-from-top" } as const;
 const EXIT = { right: "slide-back-left", left: "slide-back-right", inside: "slide-back-top" } as const;
@@ -58,7 +64,12 @@ const EXIT = { right: "slide-back-left", left: "slide-back-right", inside: "slid
  */
 export default function ItemPopover(p: Props) {
   const { item, placement } = p;
+  const wb = p.boardStyle === "whiteboard";
+  const isPin = item.kind === "pin";
+  const marker = markerColor(item.color);
+  const mapRef = useRef<HTMLInputElement>(null);
   const mine = p.links.filter((l) => l.from === item.id || l.to === item.id);
+  const pinTarget = isPin ? p.links.find((l) => l.from === item.id)?.to ?? "" : "";
   const side = placement.side;
   // Decided once when the card opens (it remounts per item), so zooming while it is open never swaps animations.
   const [floats] = useState(() => isSmallOnScreen(placement.anchor));
@@ -66,6 +77,8 @@ export default function ItemPopover(p: Props) {
   const floatSide = side === "left" ? "left" : "right";
   const enter = floats ? `float-in-${floatSide}` : ENTER[side];
   const exit = floats ? `float-out-${floatSide}` : EXIT[side];
+  const swatches = isPin ? PIN_COLORS : PAPER_COLORS;
+  const cardColor = isPin ? "#fbfaf4" : item.color;
 
   return (
     <div className="pointer-events-none absolute z-30" style={{ left: placement.left, top: placement.top, width: POPOVER_WIDTH }}>
@@ -76,9 +89,11 @@ export default function ItemPopover(p: Props) {
         }}
         style={{
           maxHeight: p.maxHeight,
-          backgroundColor: item.color,
-          // Same finish as a section: the paper colour under a pale wash.
-          backgroundImage: "linear-gradient(rgba(255,255,255,0.6), rgba(255,255,255,0.6))",
+          // Same finish as a section: the paper colour under a pale wash (whiteboard: white with a marker outline).
+          backgroundColor: wb ? "#fbfcfc" : cardColor,
+          backgroundImage: wb ? undefined : "linear-gradient(rgba(255,255,255,0.6), rgba(255,255,255,0.6))",
+          border: wb ? `3px solid ${isPin ? item.color : marker}` : undefined,
+          borderRadius: wb ? "14px 9px 16px 10px / 10px 16px 9px 14px" : undefined,
           boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
         }}
       >
@@ -92,10 +107,10 @@ export default function ItemPopover(p: Props) {
         <input
           value={item.title}
           onChange={(e) => p.onPatch({ title: e.target.value })}
-          placeholder="Title"
+          placeholder={isPin ? "Label" : "Title"}
           className={`${field} mb-2 text-lg font-bold`}
         />
-        {item.kind !== "section" && (
+        {item.kind !== "section" && !isPin && (
           <textarea
             value={item.text}
             onChange={(e) => p.onPatch({ text: e.target.value })}
@@ -105,24 +120,81 @@ export default function ItemPopover(p: Props) {
           />
         )}
 
-        <div className="mb-3 flex gap-2">
-          {PAPER_COLORS.map((c) => (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {swatches.map((c) => (
             <button
               key={c}
               aria-label={`Colour ${c}`}
               onClick={() => p.onPatch({ color: c })}
-              className={`h-6 w-6 rounded-sm border-2 ${item.color === c ? "border-stone-800" : "border-black/25"}`}
-              style={{ background: c }}
+              className={`h-6 w-6 rounded-sm border-2 ${item.color === c ? "border-stone-800" : "border-black/25"} ${isPin ? "rounded-full" : ""}`}
+              style={{ background: wb && !isPin ? markerColor(c) : c }}
             />
           ))}
         </div>
+
+        {isPin && (
+          <div className="mb-3 space-y-2 text-sm">
+            <div className="flex flex-wrap gap-1.5">
+              {PIN_ICONS.map((icon) => (
+                <button
+                  key={icon}
+                  onClick={() => p.onPatch({ icon })}
+                  className={`flex h-8 w-8 items-center justify-center rounded-sm border-2 text-lg ${(item.icon || "📍") === icon ? "border-stone-800 bg-white/70" : "border-black/20 bg-white/30"}`}
+                  aria-label={`Icon ${icon}`}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2">
+              <span className="text-stone-600">Points to</span>
+              <select value={pinTarget} onChange={(e) => p.onSetPinTarget(e.target.value || null)} className={`${select} min-w-0 flex-1`}>
+                <option value="">(nothing)</option>
+                {p.pinTargets.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title || "(untitled)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        <ItemFields item={item} types={p.types} onPatch={p.onPatch} />
+
+        {item.kind === "section" && (
+          <div className="mb-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-stone-600">Map</span>
+              <button className={btn} onClick={() => mapRef.current?.click()}>
+                {item.mapData ? "Change image…" : "Set map image…"}
+              </button>
+              {item.mapData && (
+                <button className={btn} onClick={() => p.onPatch({ mapData: undefined })}>
+                  Remove
+                </button>
+              )}
+              <input
+                ref={mapRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) p.onPickMap(file);
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="mb-3 flex flex-wrap gap-2">
           <button className={btn} onClick={p.onZoomTo}>
             Zoom to
           </button>
           <button className={`${btn} ${p.linking ? "border-red-600 bg-red-200" : ""}`} onClick={p.onToggleLink}>
-            {p.linking ? "Tap another item…" : "Tie string"}
+            {p.linking ? "Tap another item…" : "Connect"}
           </button>
           <button className={`${btn} text-red-700`} onClick={p.onDelete}>
             Delete
@@ -138,21 +210,25 @@ export default function ItemPopover(p: Props) {
             <button className={btn} onClick={() => p.onAddInside("note")}>
               + Note
             </button>
+            <button className={btn} onClick={() => p.onAddInside("pin")}>
+              + Pin
+            </button>
           </div>
         )}
 
         {mine.length > 0 && (
           <div className="text-sm">
-            <div className="mb-1 text-stone-600">Strings</div>
+            <div className="mb-1 text-stone-600">Connectors</div>
             {mine.map((l) => {
               const otherId = l.from === item.id ? l.to : l.from;
               return (
-                <div key={l.id} className="flex items-center justify-between py-0.5">
-                  <span className="truncate">↔ {p.itemsById.get(otherId)?.title || "(untitled)"}</span>
-                  <button className="px-2 text-red-700" onClick={() => p.onRemoveLink(l.id)} aria-label="Cut string">
-                    ✂
-                  </button>
-                </div>
+                <LinkRow
+                  key={l.id}
+                  link={l}
+                  otherTitle={p.itemsById.get(otherId)?.title || "(untitled)"}
+                  onPatch={(patch) => p.onPatchLink(l.id, patch)}
+                  onRemove={() => p.onRemoveLink(l.id)}
+                />
               );
             })}
           </div>

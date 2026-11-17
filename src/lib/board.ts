@@ -58,6 +58,7 @@ export function defaultSize(kind: ItemKind, depth: number): { w: number; h: numb
     return { w: 340, h: 240 };
   }
   if (kind === "image") return { w: 240, h: 200 };
+  if (kind === "pin") return { w: 130, h: 84 };
   return { w: 180, h: 100 };
 }
 
@@ -140,5 +141,21 @@ export function removeItem(board: Board, id: string): Board {
 
 /** Where a string attaches to an item: the pin at top centre. */
 export function pinPoint(i: Item): { x: number; y: number } {
+  // A map pin joins up at the middle of its head.
+  if (i.kind === "pin") return { x: i.x + i.w / 2, y: i.y + 20 };
   return { x: i.x + i.w / 2, y: i.y + 14 };
+}
+
+/** Whiteboard view: each paper colour is drawn as a dry-erase marker colour instead. */
+const MARKER_COLORS: Record<string, string> = {
+  "#fff4a3": "#1f2937", // yellow paper -> black marker
+  "#ffd0dc": "#dc2626", // pink -> red
+  "#c9eab8": "#15803d", // green -> green
+  "#c6e2ff": "#2563eb", // blue -> blue
+  "#e6d4ff": "#7c3aed", // purple -> purple
+  "#ffffff": "#475569", // white -> grey
+};
+
+export function markerColor(paper: string): string {
+  return MARKER_COLORS[paper.toLowerCase()] ?? "#1f2937";
 }

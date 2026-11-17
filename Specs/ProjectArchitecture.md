@@ -46,6 +46,12 @@ src/
     useBoards.ts        all boards in memory, debounced autosave, current board id
     seed.ts             demo board and empty board factories
     image.ts            downscale picked photos to JPEG data URLs
+    whiteboard.ts       generated whiteboard texture (smears, ghost lines, dust)
+    marker.ts           pure wobbly marker-outline path generator
+    model.ts            normalizeBoard (validates and defaults stored/imported boards), starter types, safeUrl, fieldSummary, pin/connector palettes
+    search.ts           pure searchItems (title, notes, link, type, fields) with the section path
+    online.ts           useOnline (for the "needs signal" hint on links)
+    boardStyle.ts       useBoardStyle hook (cork or whiteboard view, localStorage)
     theme.ts            useTheme hook (light/dark, dark by default, class on <html>)
     theme-script.ts     pre-paint script so the theme never flashes
     cork.ts             paints the seamless cork background tile on a canvas at startup

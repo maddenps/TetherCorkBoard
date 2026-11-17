@@ -1,4 +1,5 @@
 import { PAPER_COLORS, uid } from "./board";
+import { defaultTypes } from "./model";
 import type { Board, Item, ItemKind, Link } from "./types";
 
 /** Demo board showing the area > boulder > route hierarchy. */
@@ -60,11 +61,12 @@ export function createDemoBoard(): Board {
     name: "Bouldering trip (demo)",
     items,
     links,
+    types: defaultTypes(),
     view: { x: 0, y: 0, scale: 0 },
     updatedAt: Date.now(),
   };
 }
 
 export function createEmptyBoard(name: string): Board {
-  return { id: uid(), name, items: [], links: [], view: { x: 0, y: 0, scale: 0 }, updatedAt: Date.now() };
+  return { id: uid(), name, items: [], links: [], types: defaultTypes(), view: { x: 0, y: 0, scale: 0 }, updatedAt: Date.now() };
 }

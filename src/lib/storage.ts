@@ -1,3 +1,4 @@
+import { normalizeBoard } from "./model";
 import type { Board } from "./types";
 
 // Everything lives in the browser (IndexedDB) so the app works with no signal.
@@ -29,7 +30,9 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 
 export async function loadBoards(): Promise<Board[]> {
   try {
-    const all = await run<Board[]>("readonly", (s) => s.getAll());
+    const raw = await run<unknown[]>("readonly", (s) => s.getAll());
+    // Stored boards are untrusted: anything odd is repaired, and anything unusable is skipped, never thrown.
+    const all = raw.map(normalizeBoard).filter((b): b is Board => !!b);
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (e) {
     console.warn("Could not read boards from IndexedDB", e);

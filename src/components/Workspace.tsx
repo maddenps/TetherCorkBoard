@@ -1,12 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { createEmptyBoard } from "@/lib/seed";
 import { uid } from "@/lib/board";
+import { normalizeBoard } from "@/lib/model";
 import { useBoards } from "@/lib/useBoards";
 import { useTheme } from "@/lib/theme";
+import { useBoardStyle } from "@/lib/boardStyle";
 import type { Board as BoardData, BoardExport } from "@/lib/types";
 import Board from "./Board";
+import TypesEditor from "./TypesEditor";
 
 const btn =
   "shrink-0 rounded-md bg-stone-300 px-2.5 py-1.5 text-sm font-medium text-stone-900 active:bg-stone-400 dark:bg-zinc-500 dark:text-white dark:active:bg-zinc-400";
@@ -14,7 +17,9 @@ const btn =
 export default function Workspace() {
   const { boards, currentId, setCurrentId, ready, update, add, remove } = useBoards();
   const { theme, setTheme } = useTheme();
+  const { boardStyle, setBoardStyle } = useBoardStyle();
   const importRef = useRef<HTMLInputElement>(null);
+  const [typesOpen, setTypesOpen] = useState(false);
   const current = boards.find((b) => b.id === currentId);
 
   if (!ready || !current) {
@@ -53,9 +58,11 @@ export default function Workspace() {
     e.target.value = "";
     if (!file) return;
     try {
-      const data = JSON.parse(await file.text()) as BoardExport;
-      if (data.format !== "tethercorkboard" || !Array.isArray(data.board?.items)) throw new Error("bad format");
-      const board: BoardData = { ...data.board, id: uid(), updatedAt: Date.now() };
+      const data = JSON.parse(await file.text()) as Partial<BoardExport> | null;
+      if (data?.format !== "tethercorkboard") throw new Error("bad format");
+      const clean = normalizeBoard(data.board);
+      if (!clean) throw new Error("bad board");
+      const board: BoardData = { ...clean, id: uid(), updatedAt: Date.now() };
       add(board);
     } catch {
       alert("That file is not a Tether Cork Board export.");
@@ -85,11 +92,22 @@ export default function Workspace() {
         <button className={btn} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle light or dark theme">
           {theme === "dark" ? "☀ Light" : "☾ Dark"}
         </button>
+        <button className={btn} onClick={() => setTypesOpen(true)}>Types</button>
+        <button className={btn} onClick={() => setBoardStyle(boardStyle === "cork" ? "whiteboard" : "cork")} aria-label="Switch between cork board and whiteboard">
+          {boardStyle === "cork" ? "▭ Whiteboard" : "📌 Cork"}
+        </button>
         <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={importBoard} />
       </header>
       <main className="min-h-0 flex-1">
-        <Board key={current.id} board={current} update={update} />
+        <Board key={current.id} board={current} update={update} boardStyle={boardStyle} />
       </main>
+      {typesOpen && (
+        <TypesEditor
+          types={current.types}
+          onChange={(types) => update(current.id, (b) => ({ ...b, types, updatedAt: Date.now() }))}
+          onClose={() => setTypesOpen(false)}
+        />
+      )}
     </div>
   );
 }

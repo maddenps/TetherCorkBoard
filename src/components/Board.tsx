@@ -16,11 +16,15 @@ import {
   uid,
 } from "@/lib/board";
 import { CORK_TILE_SIZE, createCorkTexture } from "@/lib/cork";
+import { WHITEBOARD_TILE_SIZE, createWhiteboardTexture } from "@/lib/whiteboard";
 import { fileToDataUrl } from "@/lib/image";
-import type { Board as BoardData, Item, ItemKind, View } from "@/lib/types";
+import type { BoardStyle } from "@/lib/boardStyle";
+import { PIN_COLORS } from "@/lib/model";
+import type { Board as BoardData, Item, ItemKind, ItemType, Link, View } from "@/lib/types";
 import ItemCard from "./ItemCard";
 import ItemPopover, { POPOVER_WIDTH, type PopoverPlacement } from "./ItemPopover";
 import ResizeHandles, { type Corner } from "./ResizeHandles";
+import SearchPanel from "./SearchPanel";
 import Strings from "./Strings";
 
 type Pt = { x: number; y: number };
@@ -36,9 +40,11 @@ type Gesture =
 interface Props {
   board: BoardData;
   update: (id: string, fn: (b: BoardData) => BoardData) => void;
+  boardStyle: BoardStyle;
 }
 
-export default function Board({ board, update }: Props) {
+export default function Board({ board, update, boardStyle }: Props) {
+  const wb = boardStyle === "whiteboard";
   const boardId = board.id;
   const containerRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,12 +59,14 @@ export default function Board({ board, update }: Props) {
       : fitView(boundsOf(board.items), { w: window.innerWidth, h: window.innerHeight }),
   );
   const [cork] = useState(() => createCorkTexture());
+  const [boardTex] = useState(() => createWhiteboardTexture());
   const [animate, setAnimate] = useState(false);
   const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
   // Kept after deselecting so the edit card can play its slide-back animation before it unmounts.
   const [lastId, setLastId] = useState<string | null>(null);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"search" | "types" | null>(null);
 
   const edit = (fn: (b: BoardData) => BoardData) => update(boardId, fn);
 
@@ -69,6 +77,7 @@ export default function Board({ board, update }: Props) {
 
   const depths = useMemo(() => computeDepths(board.items), [board.items]);
   const itemsById = useMemo(() => new Map(board.items.map((i) => [i.id, i])), [board.items]);
+  const typesById = useMemo(() => new Map(board.types.map((t) => [t.id, t])), [board.types]);
   const visible = useMemo(() => {
     const s = new Set<string>();
     for (const i of board.items) if (view.scale >= thresholdFor(depths.get(i.id) ?? 0)) s.add(i.id);
@@ -304,6 +313,20 @@ export default function Board({ board, update }: Props) {
     fitRect(item.kind === "section" ? item : { x: item.x - 60, y: item.y - 60, w: item.w + 120, h: item.h + 120 });
   }
 
+  /** Select an item and bring it on screen, zooming in far enough that it is actually shown at its level. */
+  function focusItem(item: Item) {
+    setSelectedId(item.id);
+    setLinkFrom(null);
+    const rect = item.kind === "section" ? item : { x: item.x - 60, y: item.y - 60, w: item.w + 120, h: item.h + 120 };
+    let next = fitView(rect, viewportSize());
+    const need = thresholdFor(depths.get(item.id) ?? 0) + 0.05;
+    if (next.scale < need) {
+      const { w, h } = viewportSize();
+      next = { scale: need, x: w / 2 - (item.x + item.w / 2) * need, y: h / 2 - (item.y + item.h / 2) * need };
+    }
+    animateTo(next);
+  }
+
   function handleTap(id: string, now: number) {
     if (linkFrom && linkFrom !== id) {
       const from = linkFrom;
@@ -328,7 +351,7 @@ export default function Board({ board, update }: Props) {
   }
 
   // ---- adding things ----
-  function addItem(kind: ItemKind, opts: { imageData?: string; ratio?: number; parent?: Item | null } = {}) {
+  function addItem(kind: ItemKind, opts: { imageData?: string; ratio?: number; parent?: Item | null; type?: ItemType } = {}) {
     const sel = selected;
     const parent =
       opts.parent !== undefined ? opts.parent : sel ? (sel.kind === "section" ? sel : itemsById.get(sel.parentId ?? "") ?? null) : null;
@@ -338,7 +361,12 @@ export default function Board({ board, update }: Props) {
 
     let x: number;
     let y: number;
-    if (parent) {
+    if (parent && kind === "pin") {
+      // A pin goes near the middle of the map it is dropped on, fanned out so several don't stack.
+      const n = board.items.filter((i) => i.parentId === parent.id && i.kind === "pin").length;
+      x = parent.x + parent.w / 2 - size.w / 2 + ((n % 4) - 1.5) * 50;
+      y = parent.y + parent.h / 2 - size.h / 2 + ((Math.floor(n / 4) % 3) - 1) * 60;
+    } else if (parent) {
       const n = board.items.filter((i) => i.parentId === parent.id).length;
       const cols = Math.max(1, Math.floor((parent.w - 20) / (size.w + 16)));
       x = parent.x + 16 + (n % cols) * (size.w + 16);
@@ -357,10 +385,12 @@ export default function Board({ board, update }: Props) {
       x,
       y,
       ...size,
-      title: kind === "section" ? "New section" : kind === "image" ? "Photo" : "New note",
+      title: opts.type ? opts.type.name : kind === "section" ? "New section" : kind === "image" ? "Photo" : kind === "pin" ? "New pin" : "New note",
       text: "",
-      color: kind === "section" ? PAPER_COLORS[3] : PAPER_COLORS[0],
+      color: opts.type ? opts.type.color : kind === "pin" ? PIN_COLORS[0] : kind === "section" ? PAPER_COLORS[3] : PAPER_COLORS[0],
       imageData: opts.imageData,
+      ...(opts.type ? { typeId: opts.type.id } : {}),
+      ...(kind === "pin" ? { icon: "📍" } : {}),
     };
     edit((b) => ({ ...b, updatedAt: Date.now(), items: [...b.items, item] }));
     setSelectedId(item.id);
@@ -380,6 +410,20 @@ export default function Board({ board, update }: Props) {
     }
   }
 
+  async function onPickMap(item: Item, file: File) {
+    try {
+      // Maps need more detail than photos, and the section takes the picture's shape so nothing is cropped.
+      const { dataUrl, ratio } = await fileToDataUrl(file, 2400);
+      edit((b) => ({
+        ...b,
+        updatedAt: Date.now(),
+        items: b.items.map((i) => (i.id === item.id ? { ...i, mapData: dataUrl, h: Math.max(MIN_H, Math.round(i.w * ratio)) } : i)),
+      }));
+    } catch {
+      alert("Could not read that image.");
+    }
+  }
+
   /** Pop the edit card out beside the item (right, else left), clamped on screen; inside it if the item fills the view. */
   function popoverPlacement(item: Item): PopoverPlacement {
     const { w: cw, h: ch } = size;
@@ -394,6 +438,7 @@ export default function Board({ board, update }: Props) {
     return { left: Math.max(8, cw - POPOVER_WIDTH - 12), top: clampTop(top + 40), side: "inside", anchor };
   }
 
+  const wbScale = 0.5 + Math.min(Math.max(view.scale, 0.2), 2) * 0.5;
   const corkScale = 0.45 + Math.min(Math.max(view.scale, 0.2), 2) * 0.5;
   const depthShown =[...visible].reduce((m, id) => Math.max(m, depths.get(id) ?? 0), 0);
   const tool =
@@ -402,14 +447,31 @@ export default function Board({ board, update }: Props) {
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full touch-none select-none overflow-hidden"
-      style={{
-        backgroundColor: "#d2ac7e",
-        backgroundImage: cork ? `url(${cork})` : undefined,
-        // The cork grain follows the camera but zooms gently, so it never turns to mush.
-        backgroundSize: `${CORK_TILE_SIZE * corkScale}px ${CORK_TILE_SIZE * corkScale}px`,
-        backgroundPosition: `${view.x}px ${view.y}px`,
-      }}
+      className="relative h-full w-full touch-none select-none overflow-clip"
+      style={
+        wb
+          ? {
+              // A glossy white surface with a soft sheen; it stays put while the marker work moves over it.
+              backgroundColor: "#f1f4f5",
+              // Smears and ghost lines tile and follow the camera; the sheen is fixed to the screen.
+              backgroundImage: [
+                "radial-gradient(ellipse at 22% 18%, rgba(255,255,255,0.7), rgba(255,255,255,0) 55%)",
+                "radial-gradient(ellipse at 80% 85%, rgba(190,205,215,0.3), rgba(190,205,215,0) 60%)",
+                boardTex ? `url(${boardTex})` : "",
+              ]
+                .filter(Boolean)
+                .join(", "),
+              backgroundSize: `auto, auto, ${WHITEBOARD_TILE_SIZE * wbScale}px ${WHITEBOARD_TILE_SIZE * wbScale}px`,
+              backgroundPosition: `0 0, 0 0, ${view.x}px ${view.y}px`,
+            }
+          : {
+              backgroundColor: "#d2ac7e",
+              backgroundImage: cork ? `url(${cork})` : undefined,
+              // The cork grain follows the camera but zooms gently, so it never turns to mush.
+              backgroundSize: `${CORK_TILE_SIZE * corkScale}px ${CORK_TILE_SIZE * corkScale}px`,
+              backgroundPosition: `${view.x}px ${view.y}px`,
+            }
+      }
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -434,11 +496,13 @@ export default function Board({ board, update }: Props) {
               childCount={childCounts.get(item.id) ?? 0}
               selected={item.id === selectedId}
               linkTarget={item.id === linkFrom}
+              boardStyle={boardStyle}
+              type={item.typeId ? typesById.get(item.typeId) : undefined}
             />
           );
         })}
-        <Strings links={board.links} items={itemsById} visible={visible} />
-        {selected && visible.has(selected.id) && <ResizeHandles item={selected} scale={view.scale} />}
+        <Strings links={board.links} items={itemsById} visible={visible} whiteboard={wb} />
+        {selected && selected.kind !== "pin" && visible.has(selected.id) && <ResizeHandles item={selected} scale={view.scale} />}
       </div>
 
       {/* floating controls */}
@@ -446,6 +510,9 @@ export default function Board({ board, update }: Props) {
         <button className={tool} onClick={() => addItem("section")}>+ Section</button>
         <button className={tool} onClick={() => addItem("note")}>+ Note</button>
         <button className={tool} onClick={() => fileRef.current?.click()}>+ Photo</button>
+        <button className={tool} onClick={() => addItem("pin")}>+ Pin</button>
+        <button className={tool} onClick={() => setPanel(panel === "types" ? null : "types")} aria-expanded={panel === "types"}>+ Type ▾</button>
+        <button className={tool} onClick={() => setPanel(panel === "search" ? null : "search")} aria-expanded={panel === "search"}>🔍 Search</button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
       </div>
       <div
@@ -460,6 +527,40 @@ export default function Board({ board, update }: Props) {
         <button className={tool} onClick={() => fitRect(boundsOf(board.items))}>Fit all</button>
       </div>
 
+      {panel === "search" && (
+        <SearchPanel
+          board={board}
+          onClose={() => setPanel(null)}
+          onPick={(item) => {
+            setPanel(null);
+            focusItem(item);
+          }}
+        />
+      )}
+      {panel === "types" && (
+        <div
+          className="absolute inset-x-3 top-14 z-30 flex max-h-96 flex-col gap-1 overflow-y-auto rounded-lg bg-stone-50 p-2 text-stone-900 shadow-xl sm:right-auto sm:w-64 dark:bg-zinc-700 dark:text-zinc-50"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Add from a type</div>
+          {board.types.length === 0 && <div className="px-2 py-2 text-sm">No types yet. Use Types in the top bar to design some.</div>}
+          {board.types.map((t) => (
+            <button
+              key={t.id}
+              className="flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-stone-200 active:bg-stone-300 dark:hover:bg-zinc-600"
+              onClick={() => {
+                setPanel(null);
+                addItem(t.kind, { type: t });
+              }}
+            >
+              <span className="h-4 w-4 shrink-0 rounded-sm border border-black/25" style={{ background: t.color }} />
+              <span className="min-w-0 flex-1 truncate font-semibold">{t.name}</span>
+              <span className="text-xs text-stone-500 dark:text-zinc-300">{t.kind}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {linkFrom && (
         <div className="absolute inset-x-0 top-14 z-20 mx-auto w-fit rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md">
           Tap the item to tie the string to
@@ -473,10 +574,23 @@ export default function Board({ board, update }: Props) {
             item={popItem}
             leaving={leaving}
             placement={popoverPlacement(popItem)}
-            maxHeight={Math.max(200, size.h - 16)}
+            maxHeight={Math.max(160, size.h - popoverPlacement(popItem).top - 8)}
             links={board.links}
             itemsById={itemsById}
             linking={linkFrom === popItem.id}
+            boardStyle={boardStyle}
+            types={board.types}
+            pinTargets={board.items.filter((i) => i.id !== popItem.id && i.kind !== "pin")}
+            onPatchLink={(id, patch) => edit((b) => ({ ...b, updatedAt: Date.now(), links: b.links.map((l) => (l.id === id ? { ...l, ...patch } : l)) }))}
+            onSetPinTarget={(targetId) =>
+              edit((b) => {
+                const prev = b.links.find((l) => l.from === popItem.id);
+                const rest = prev ? b.links.filter((l) => l.id !== prev.id) : b.links;
+                const link: Link | null = targetId ? { id: uid(), from: popItem.id, to: targetId, style: "line", color: popItem.color } : null;
+                return { ...b, updatedAt: Date.now(), links: link ? [...rest, link] : rest };
+              })
+            }
+            onPickMap={(file) => void onPickMap(popItem, file)}
             onPatch={(patch) =>
               edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === popItem.id ? { ...i, ...patch } : i)) }))
             }
@@ -520,6 +634,9 @@ export default function Board({ board, update }: Props) {
                 childCount={childCounts.get(item.id) ?? 0}
                 selected={!leaving && item.id === popItem?.id}
                 linkTarget={false}
+                boardStyle={boardStyle}
+                type={item.typeId ? typesById.get(item.typeId) : undefined}
+                cover={leaving ? "solid" : "enter"}
               />
             );
           })}
@@ -528,8 +645,9 @@ export default function Board({ board, update }: Props) {
             links={board.links.filter((l) => coverItems.some((i) => i.id === l.from || i.id === l.to))}
             items={itemsById}
             visible={visible}
+            whiteboard={wb}
           />
-          {!leaving && popItem && <ResizeHandles item={popItem} scale={view.scale} />}
+          {!leaving && popItem && popItem.kind !== "pin" && <ResizeHandles item={popItem} scale={view.scale} />}
         </div>
       )}
     </div>

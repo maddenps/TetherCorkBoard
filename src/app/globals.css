@@ -268,3 +268,16 @@ body {
 .no-pointer * {
   pointer-events: none !important;
 }
+
+/* Whiteboard: the cover copy of the selected item is filled just long enough to hide the card sliding out. */
+@keyframes cover-fill {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.cover-fill-enter { animation: cover-fill 1000ms linear forwards; }
