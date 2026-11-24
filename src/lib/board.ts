@@ -118,14 +118,15 @@ export function fitView(
   rect: { x: number; y: number; w: number; h: number },
   viewport: { w: number; h: number },
   padding = 60,
+  /** Space at the top that floating controls cover; the rect is fitted into what is left below it. */
+  top = 0,
 ): View {
-  const scale = clampScale(
-    Math.min((viewport.w - padding * 2) / rect.w, (viewport.h - padding * 2) / rect.h),
-  );
+  const usable = Math.max(1, viewport.h - top);
+  const scale = clampScale(Math.min((viewport.w - padding * 2) / rect.w, (usable - padding * 2) / rect.h));
   return {
     scale,
     x: viewport.w / 2 - (rect.x + rect.w / 2) * scale,
-    y: viewport.h / 2 - (rect.y + rect.h / 2) * scale,
+    y: top + usable / 2 - (rect.y + rect.h / 2) * scale,
   };
 }
 

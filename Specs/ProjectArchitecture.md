@@ -30,9 +30,16 @@ src/
   app/
     layout.tsx          metadata, viewport, manifest link, registers the service worker
     page.tsx            renders <Workspace/>
-    globals.css         Tailwind import, base styles
+    globals.css         Tailwind import, chrome design tokens (@theme), drawer and paper-detail styles, edit-card animations
   components/
-    Workspace.tsx       board picker, new / rename / delete, export / import
+    Workspace.tsx       owns the boards, the menu drawer, the types dialog and import / export; renders Board full screen
+    MenuDrawer.tsx      left drawer: boards, this board (rename, backup, open), look (theme, surface), types, help, delete
+    AddDrawer.tsx       right drawer: add section / note / photo / pin and items from your types
+    TopBar.tsx          the one floating bar: menu, board name, search, Add
+    ZoomControls.tsx    bottom-right zoom and level badge with Up, zoom in, zoom out, fit all
+    ui/                 chrome building blocks: Drawer, Segmented, icons (inline SVG), styles (shared class strings), useEscape
+    SearchPanel.tsx     search the board; drops down under the top bar
+    TypesEditor.tsx     item types and packs dialog (bottom sheet on phones)
     Board.tsx           camera (pan, zoom), gestures, add items, selection, string mode
     ItemCard.tsx        one item on the board (section, note, photo)
     ItemPopover.tsx     edit card that pops out beside the selected item and follows it
@@ -103,7 +110,7 @@ Double-click an item (or "Zoom to" in the panel) animates the camera to it. How 
 | Wheel / trackpad scroll | Zoom around the cursor |
 | Two-finger pinch | Zoom and pan |
 | Drag an item (or a section header) | Move it and everything inside it; on drop it joins the smallest section under its centre |
-| Double-click / double-tap an item (any part, including the body of an open section) | Zoom in to it; a single click does nothing (a pin zooms to the section it points at). Hit-tested by position, so it works at any zoom |
+| Double-click / double-tap an item (any part, including the body of an open section) | Zoom in to it by at most 50 percentage points of zoom (25% to 75%, 45% to 95%, 100% to 150%; double-click again to go further), with an eased glide; a single click does nothing (a pin zooms to the section it points at). Hit-tested by position, so it works at any zoom |
 | Click the 🔗 icon on a card | Opens the item's link in a new tab (real `<a>`, `noopener`; only http(s) via `safeUrl`) |
 | Click the 🖼️ icon on a card | Opens the photo stack for that note or section (`Item.photos`, added from "Add photos…" in the edit card) |
 | Drag the red pin (thumbtack) on an item | Moves where the pin and any string tied to the item sit (`Item.pin`, fractions of the item's size; "Reset pin" in the edit card). A click on the pin without moving counts as a click on the item |

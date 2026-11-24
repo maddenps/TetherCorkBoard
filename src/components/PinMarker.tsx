@@ -30,7 +30,16 @@ export default function PinMarker({ item, visible, depth, selected, linkTarget }
         transition: "opacity 250ms",
       }}
     >
-      <div className="relative h-full w-full" style={{ filter: "drop-shadow(1px 3px 3px rgba(0,0,0,0.45))" }}>
+      <div
+        className="relative h-full w-full"
+        style={{
+          filter: "drop-shadow(1px 3px 3px rgba(0,0,0,0.45))",
+          // Zoomed out, a pin grows (about the point of its tip, so it still marks the same spot) to stay about 30px
+          // across on screen, with its label readable: 0.75 / zoom times its size, never smaller than itself.
+          transformOrigin: "50% 50px",
+          transform: "scale(max(1, calc(0.75 / var(--s, 1))))",
+        }}
+      >
         <svg width={40} height={52} viewBox="0 0 40 52" className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2">
           <path
             d="M20 50 C20 50 3 30 3 19 a17 17 0 1 1 34 0 C37 30 20 50 20 50 Z"
@@ -48,7 +57,7 @@ export default function PinMarker({ item, visible, depth, selected, linkTarget }
           {item.icon || "📍"}
         </div>
         <div
-          className="pointer-events-none absolute left-1/2 max-w-full -translate-x-1/2 truncate rounded px-2 py-0.5 text-sm font-bold text-stone-900"
+          className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-sm font-bold text-stone-900"
           style={{ top: 56, background: "rgba(255,255,255,0.9)", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
         >
           {item.title || "Pin"}

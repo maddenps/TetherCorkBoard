@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { PAPER_COLORS, markerColor } from "@/lib/board";
 import type { BoardStyle } from "@/lib/boardStyle";
 import { PIN_COLORS, PIN_ICONS } from "@/lib/model";
@@ -8,6 +8,8 @@ import ItemFields from "./ItemFields";
 import LinkRow from "./LinkRow";
 
 export const POPOVER_WIDTH = 288;
+/** Two columns of the normal width: used instead of a scrollbar when the card is too tall for the space it has. */
+export const POPOVER_WIDE = 600;
 
 export interface PopoverPlacement {
   left: number;
@@ -16,6 +18,8 @@ export interface PopoverPlacement {
   side: "left" | "right" | "inside";
   /** The item's size on screen (world size times zoom), used to decide whether it is too small to hide the card. */
   anchor: { w: number; h: number };
+  /** Card width in px (normal, or two columns wide). */
+  width: number;
 }
 
 /**
@@ -31,6 +35,10 @@ interface Props {
   item: Item;
   placement: PopoverPlacement;
   maxHeight: number;
+  /** Laid out in two columns (wider) instead of one. */
+  wide: boolean;
+  /** The card measures its content and asks for two columns when one would need a scrollbar (and for one again when it fits). */
+  onNeedWide: (wide: boolean) => void;
   /** True while it slides back under the item after you click away. */
   leaving: boolean;
   links: Link[];
@@ -71,6 +79,7 @@ export default function ItemPopover(p: Props) {
   const marker = markerColor(item.color);
   const mapRef = useRef<HTMLInputElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const photos = item.photos ?? [];
   const mine = p.links.filter((l) => l.from === item.id || l.to === item.id);
   const pinTarget = isPin ? p.links.find((l) => l.from === item.id)?.to ?? "" : "";
@@ -84,10 +93,20 @@ export default function ItemPopover(p: Props) {
   const swatches = isPin ? PIN_COLORS : PAPER_COLORS;
   const cardColor = isPin ? "#fbfaf4" : item.color;
 
+  // Too tall for the space? Go two columns wide instead of scrolling (and back to one when it fits again).
+  // In two columns the content height is about half of what one column needs; 24px is the card's padding.
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const oneColumn = p.wide ? el.offsetHeight * 2 : el.offsetHeight;
+    if (!p.wide && oneColumn + 24 > p.maxHeight) p.onNeedWide(true);
+    else if (p.wide && oneColumn + 24 <= p.maxHeight - 24) p.onNeedWide(false);
+  });
+
   return (
-    <div className="pointer-events-none absolute z-30" style={{ left: placement.left, top: placement.top, width: POPOVER_WIDTH }}>
+    <div className="pointer-events-none absolute z-30" style={{ left: placement.left, top: placement.top, width: placement.width }}>
       <div
-        className={`${p.leaving ? exit : enter} ${p.leaving ? "pointer-events-none" : "pointer-events-auto"} overflow-auto rounded-sm p-3 text-stone-800`}
+        className={`${p.leaving ? exit : enter} ${p.leaving ? "pointer-events-none" : "pointer-events-auto"} overflow-auto rounded-ui p-3 text-stone-800`}
         onAnimationEnd={(e) => {
           if (p.leaving && e.target === e.currentTarget) p.onLeft();
         }}
@@ -101,7 +120,8 @@ export default function ItemPopover(p: Props) {
           boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
         }}
       >
-        <div className="mb-2 flex items-center justify-between">
+        <div ref={contentRef} className="card-cols" style={{ columnCount: p.wide ? 2 : 1, columnGap: "1.25rem" }}>
+        <div className="card-span mb-2 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-stone-600">{item.kind}</span>
           <button className={btn} onClick={p.onClose} aria-label="Close settings">
             Done
@@ -130,7 +150,7 @@ export default function ItemPopover(p: Props) {
               key={c}
               aria-label={`Colour ${c}`}
               onClick={() => p.onPatch({ color: c })}
-              className={`h-6 w-6 rounded-sm border-2 ${item.color === c ? "border-stone-800" : "border-black/25"} ${isPin ? "rounded-full" : ""}`}
+              className={`h-6 w-6 rounded-ui-sm border-2 ${item.color === c ? "border-stone-800" : "border-black/25"} ${isPin ? "rounded-full" : ""}`}
               style={{ background: wb && !isPin ? markerColor(c) : c }}
             />
           ))}
@@ -143,7 +163,7 @@ export default function ItemPopover(p: Props) {
                 <button
                   key={icon}
                   onClick={() => p.onPatch({ icon })}
-                  className={`flex h-8 w-8 items-center justify-center rounded-sm border-2 text-lg ${(item.icon || "📍") === icon ? "border-stone-800 bg-white/70" : "border-black/20 bg-white/30"}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-ui-sm border-2 text-lg ${(item.icon || "📍") === icon ? "border-stone-800 bg-white/70" : "border-black/20 bg-white/30"}`}
                   aria-label={`Icon ${icon}`}
                 >
                   {icon}
@@ -214,7 +234,7 @@ export default function ItemPopover(p: Props) {
                 {photos.map((src, n) => (
                   <div key={n} className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={src} alt="" draggable={false} className="h-14 w-14 rounded-sm object-cover" />
+                    <img src={src} alt="" draggable={false} className="h-14 w-14 rounded-ui-sm object-cover" />
                     <button
                       aria-label="Remove photo"
                       className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-red-600 text-xs font-bold leading-5 text-white"
@@ -305,6 +325,7 @@ export default function ItemPopover(p: Props) {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

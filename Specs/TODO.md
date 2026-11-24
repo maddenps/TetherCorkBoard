@@ -72,6 +72,15 @@ Other ideas from the same brainstorm:
 ## Quality
 
 - [ ] [M] Add Vitest and tests for `lib/board.ts` (depths, reparent, delete, fit)
+- [x] [H] Modern, mobile-friendly UI: one floating top bar, a left menu drawer (boards, backup, look, types, help) and a right Add drawer, vertical zoom pill, inline SVG icons, and a distinct "paper and thread" look with tokens in `globals.css` and the rules in `StyleGuide.md` — 2026-11-24, browser-checked on desktop and a phone-sized viewport with a mouse; touch not yet
+- [x] [M] Office-supply fasteners (tape, paper clip, staple, pushpin, binder clip) on panels, with an Always / Sometimes / Off setting — 2026-11-24
+- [ ] [M] Whiteboard view switched off (`WHITEBOARD_ENABLED = false`, 2026-11-24): decide whether to delete it (`lib/whiteboard.ts`, `lib/marker.ts`, the `wb` branches in `ItemCard`, `PinMarker`, `Strings`, `ItemPopover`, `Board`, `ResizeHandles`) or redesign it
+- [x] [M] Folded dog-ear corner on floating panels, perforated inner edge on drawers, hand-drawn marker underline on the current breadcrumb, two pushpins holding up the top bar, and fasteners on a few notes and sections — 2026-11-24, browser-checked with a mouse
+- [ ] [L] More paper-and-office ideas for the chrome: binder-ring holes down the menu drawer's edge, rubber-stamp badges (e.g. DONE) for finished tasks
+- [x] [H] Readable when zoomed out: titles, pins, strings and labels grow to stay legible, notes show just a title below 45% zoom (`--s`, `OVERVIEW_SCALE`) — 2026-11-24, browser-checked on the Bishop board at 14% and 31%
+- [ ] [L] If boards ever need thousands of items: draw the zoomed-out overview on a canvas (or with WebGL) and keep DOM cards only for what is on screen; today the board is DOM + CSS, which is fine up to a few hundred cards
+- [ ] [M] Zoomed-out polish: pins that sit close together overlap when enlarged (cluster them or fan them out); consider showing one key field (e.g. a grade) next to the title in overview
+- [ ] [M] Chrome polish: restyle the edit card's controls (`cardStyles.ts`) with the chrome tokens, and make the gesture hint shorter on phones
 - [ ] [L] Playwright smoke test (load demo board, zoom reveals the notes inside a section)
 - [ ] [L] Dockerfile / deploy pipeline once a host is chosen (static hosting is enough)
 

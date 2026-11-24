@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, type CSSProperties } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, type CSSProperties } from "react";
 import { scribblePath } from "@/lib/marker";
+import Fastener from "./ui/Fastener";
 import { markerColor } from "@/lib/board";
 import type { BoardStyle } from "@/lib/boardStyle";
 import { fieldSummary, safeUrl } from "@/lib/model";
@@ -30,6 +31,8 @@ interface Props {
   straight?: boolean;
   /** Opens the photo stack for an item (the picture-frame icon). */
   onOpenPhotos?: (id: string) => void;
+  /** Zoomed far out: notes show just a (big) title and small extras are left out so the rest can be read. */
+  overview?: boolean;
 }
 
 // Handwriting-style system fonts, so nothing has to be downloaded.
@@ -53,7 +56,7 @@ const SECTION_PAPER = [
   "linear-gradient(rgba(255,255,255,0.6), rgba(255,255,255,0.6))",
 ].join(", ");
 
-export default function ItemCard({ item, visible, childrenVisible, childCount, depth, selected, linkTarget, boardStyle = "cork", cover, type, onFit, straight, onOpenPhotos }: Props) {
+function ItemCard({ item, visible, childrenVisible, childCount, depth, selected, linkTarget, boardStyle = "cork", cover, type, onFit, straight, onOpenPhotos, overview = false }: Props) {
   const wb = boardStyle === "whiteboard";
   const marker = markerColor(item.color);
   // Marker ink on the whiteboard; left undefined on cork so the text classes below apply.
@@ -116,6 +119,8 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
         opacity: visible ? 1 : 0,
         pointerEvents: !visible || bodyPassesThrough ? "none" : "auto",
         transition: "opacity 250ms",
+        // Layout and style changes inside a card (e.g. a new zoom) stay inside it, so the browser does not re-check the others.
+        contain: "layout style",
       }}
     >
       <div
@@ -124,7 +129,10 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
           // A tilted card is resampled by the compositor and its text goes soft, so it only tilts while zoomed out.
           transform: isSection || (wb && !isImage) ? undefined : `rotate(${straight ? 0 : tilt(item.id)}deg)`,
           transition: "transform 200ms",
-          filter: wb ? (isImage ? "drop-shadow(1px 2px 2px rgba(0,0,0,0.25))" : undefined) : "drop-shadow(3px 5px 4px rgba(0,0,0,0.38))",
+          // A real shadow that follows the card's shape is a filter, which is costly for the browser to compose; zoomed out
+          // (overview, when most cards are on screen and tiny) a plain box shadow does the job.
+          filter: wb ? (isImage ? "drop-shadow(1px 2px 2px rgba(0,0,0,0.25))" : undefined) : overview ? undefined : "drop-shadow(3px 5px 4px rgba(0,0,0,0.38))",
+          boxShadow: !wb && overview ? "3px 5px 4px rgba(0,0,0,0.3)" : undefined,
         }}
       >
         {outline && (
@@ -134,6 +142,10 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
             {cover && <path d={outline} fill={BOARD_FILL} stroke="none" className={cover === "enter" ? "cover-fill-enter" : undefined} />}
             <path d={outline} fill="none" stroke={marker} strokeWidth={isSection ? 4.5 : 3.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.92} />
           </svg>
+        )}
+        {/* Only a few notes and sections wear a tape or a clip (never in whiteboard view, never a staple), and they stay put: the look comes from the item's id. */}
+        {!wb && !isImage && (
+          <Fastener id={item.id} at="top-left" rare chance={isSection ? 0.22 : 0.1} scale={isSection ? 1.8 : 1.2} kinds={["tape", "clip"]} />
         )}
         <div className="relative h-full w-full overflow-hidden" style={paper}>
           {isImage && item.imageData && (
@@ -157,17 +169,17 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
               <div
                 data-item-id={visible ? item.id : undefined}
                 className={`pointer-events-auto absolute truncate font-bold text-stone-800 ${hasMap ? "rounded px-3 py-1" : `left-0 top-0 w-full pr-24 pt-3 ${wb ? "pl-5" : "pl-16"}`}`}
-                style={{ fontFamily: HAND, fontSize: depth === 0 ? 48 : 30, color: ink, ...(hasMap ? { left: 12, top: 12, maxWidth: "calc(100% - 24px)", background: "rgba(255,255,255,0.85)" } : {}) }}
+                style={{ fontFamily: HAND, fontSize: depth === 0 ? "min(max(48px, calc(15px / var(--s, 1))), 80px)" : "min(max(30px, calc(12px / var(--s, 1))), 54px)", color: ink, ...(hasMap ? { left: 12, top: 12, maxWidth: "calc(100% - 24px)", background: "rgba(255,255,255,0.85)" } : {}) }}
               >
                 {item.title}
               </div>
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center text-stone-800" style={{ color: ink }}>
                 <div className={hasMap ? "rounded px-4 py-2" : undefined} style={hasMap ? { background: "rgba(255,255,255,0.85)" } : undefined}>
-                <div className="font-bold leading-tight" style={{ fontFamily: HAND, fontSize: depth === 0 ? 72 : 40 }}>
+                <div className="font-bold leading-tight" style={{ fontFamily: HAND, fontSize: depth === 0 ? "min(max(72px, calc(18px / var(--s, 1))), 110px)" : "min(max(40px, calc(13px / var(--s, 1))), 70px)" }}>
                   {item.title}
                 </div>
-                <div className="mt-2 text-stone-600" style={{ fontSize: depth === 0 ? 30 : 20, color: ink, opacity: wb ? 0.75 : undefined }}>
+                <div className="mt-2 text-stone-600" style={{ fontSize: depth === 0 ? "min(max(30px, calc(11px / var(--s, 1))), 50px)" : "min(max(20px, calc(10px / var(--s, 1))), 40px)", color: ink, opacity: wb ? 0.75 : undefined }}>
                   {childCount > 0 ? `${childCount} inside — zoom in` : "empty — zoom in and add things"}
                 </div>
                 </div>
@@ -176,23 +188,31 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
           ) : isImage ? (
             <div
               className="absolute bottom-0 w-full truncate px-2 pb-1.5 text-center font-semibold text-stone-800"
-              style={{ fontFamily: HAND, fontSize: 20 }}
+              style={{ fontFamily: HAND, fontSize: "min(max(20px, calc(10px / var(--s, 1))), 40px)" }}
             >
               {item.title}
             </div>
           ) : (
             <div ref={noteRef} className={`px-3 pb-2 text-stone-800 ${wb ? "pt-7" : "pt-6"}`} style={{ color: ink }}>
-              <div className="font-bold leading-tight" style={{ fontFamily: HAND, fontSize: 24 }}>
+              <div
+                className="font-bold leading-tight"
+                style={{
+                  fontFamily: HAND,
+                  fontSize: "min(max(24px, calc(11.5px / var(--s, 1))), 60px)",
+                  // in overview a long title is cut after three lines rather than overflowing the note
+                  ...(overview ? { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" } : {}),
+                }}
+              >
                 {item.title}
               </div>
-              {summary.length > 0 && (
-                <div className="mt-1 text-base font-semibold leading-snug opacity-80">
+              {!overview && summary.length > 0 && (
+                <div className="mt-1 font-semibold leading-snug opacity-80" style={{ fontSize: "min(max(16px, calc(8.5px / var(--s, 1))), 21px)" }}>
                   {summary.map((line) => (
                     <div key={line} className="break-words">{line}</div>
                   ))}
                 </div>
               )}
-              {item.text && <div className="mt-1 whitespace-pre-line break-words text-lg leading-snug">{item.text}</div>}
+              {!overview && item.text && <div className="mt-1 whitespace-pre-line break-words leading-snug" style={{ fontSize: "min(max(18px, calc(8.5px / var(--s, 1))), 21px)" }}>{item.text}</div>}
             </div>
           )}
         </div>
@@ -204,7 +224,7 @@ export default function ItemCard({ item, visible, childrenVisible, childCount, d
           />
         )}
 
-        {(linkUrl || photoCount > 0) && (
+        {!overview && (linkUrl || photoCount > 0) && (
           // Real controls: they take the click themselves so the board never sees it as a click on the item.
           <div
             className="absolute right-1 top-0 flex items-center gap-1"
@@ -289,3 +309,9 @@ function Magnet({ at, id }: { at?: { x: number; y: number }; id?: string }) {
     </div>
   );
 }
+
+/**
+ * Memoized: a card only renders again when its own props change, so a camera move (which changes the zoom for the whole
+ * board) does not re-render every card. Callers must pass stable callbacks (see Board).
+ */
+export default memo(ItemCard);

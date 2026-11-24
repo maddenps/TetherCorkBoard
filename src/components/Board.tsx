@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   PAPER_COLORS,
   autoFitSections,
@@ -24,19 +24,35 @@ import { PIN_COLORS } from "@/lib/model";
 import type { Board as BoardData, Item, ItemKind, ItemType, Link, View } from "@/lib/types";
 import ItemCard from "./ItemCard";
 import PhotoViewer from "./PhotoViewer";
-import ItemPopover, { POPOVER_WIDTH, type PopoverPlacement } from "./ItemPopover";
+import ItemPopover, { POPOVER_WIDE, POPOVER_WIDTH, type PopoverPlacement } from "./ItemPopover";
 import ResizeHandles, { type Grip } from "./ResizeHandles";
 import Breadcrumb from "./Breadcrumb";
 import GestureHint from "./GestureHint";
 import SearchPanel from "./SearchPanel";
+import TopBar from "./TopBar";
+import AddDrawer from "./AddDrawer";
+import ZoomControls from "./ZoomControls";
 import Strings from "./Strings";
 
 type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
 const MIN_W = 90;
 const MIN_H = 60;
-/** At or above this zoom, cards are drawn square so their text is sharp. */
-const STRAIGHT_SCALE = 0.3;
+/** Height (px) of the floating top bar and breadcrumb; framing a view leaves this much room at the top. */
+const CHROME_TOP = 112;
+/**
+ * Below this zoom (38%) the board is in "overview": notes show only their title and small details are left out, so what is
+ * left can be made big enough to read (see ItemCard). From 38% up notes show their details too, enlarged a little to stay readable. Text and pins never shrink below a readable size on screen: they
+ * use the camera zoom as the CSS variable --s on the world layer (see lodVars).
+ */
+const OVERVIEW_SCALE = 0.38;
+/** A double-click zooms in by at most this much (50 percentage points: 25% to 75%, 45% to 95%, 100% to 150%). */
+const MAX_ZOOM_STEP = 0.5;
+/** Notes only measure their text to grow (see fitNote) at or above this zoom, while nothing is being enlarged for reading. */
+const FIT_SCALE = 0.5;
+/** At or above this zoom, cards are drawn square so their text is sharp. It is 0: a tilted card is resampled and its text goes
+ * soft (the title at the top of a note most of all), and text must stay readable at every zoom, so cards never tilt. */
+const STRAIGHT_SCALE = 0;
 type Gesture =
   | { type: "resize"; id: string; corner: Grip; sx: number; sy: number; orig: Rect }
   | { type: "pan"; sx: number; sy: number; view: View; moved: boolean; held?: boolean }
@@ -48,9 +64,15 @@ interface Props {
   board: BoardData;
   update: (id: string, fn: (b: BoardData) => BoardData) => void;
   boardStyle: BoardStyle;
+  /** Opens the app menu (boards, backup, look, types), which Workspace owns. */
+  onOpenMenu: () => void;
+  /** Opens the item types editor. */
+  onOpenTypes: () => void;
+  /** Changes to bring the gesture tips back. */
+  tipsKey: number;
 }
 
-export default function Board({ board, update, boardStyle }: Props) {
+export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTypes, tipsKey }: Props) {
   const wb = boardStyle === "whiteboard";
   const boardId = board.id;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +86,7 @@ export default function Board({ board, update, boardStyle }: Props) {
   const goUpRef = useRef<() => void>(() => {});
   const escRef = useRef<() => void>(() => {});
   const animTimer = useRef<number | undefined>(undefined);
+  const animRaf = useRef<number | undefined>(undefined);
   const holdTimer = useRef<number | undefined>(undefined);
   const cursorTimer = useRef<number | undefined>(undefined);
   const holding = useRef(false);
@@ -71,8 +94,25 @@ export default function Board({ board, update, boardStyle }: Props) {
   const [view, setView] = useState<View>(() =>
     board.view.scale > 0
       ? board.view
-      : fitView(boundsOf(board.items), { w: window.innerWidth, h: window.innerHeight }),
+      : fitView(boundsOf(board.items), { w: window.innerWidth, h: window.innerHeight }, 60, CHROME_TOP),
   );
+  // The camera is moved straight on the page (world layer, cork) every frame, which is cheap; React state (`view`) is only
+  // brought up to date every ~90ms, and at once when something that depends on the zoom changes (which items show, overview
+  // mode...). That keeps zooming, panning and gliding smooth instead of re-rendering every card on every frame.
+  const camRef = useRef<View>(view);
+  const worldRef = useRef<HTMLDivElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const lodRef = useRef("");
+  const lastCommit = useRef(0);
+  const commitTimer = useRef<number | undefined>(undefined);
+  const willChangeTimer = useRef<number | undefined>(undefined);
+  const corkRef = useRef<HTMLDivElement>(null);
+  // The cork grain's tile size on screen, as last rendered (the layer's offset is worked out from it each frame).
+  const grainRef = useRef(CORK_TILE_SIZE);
+  const wbRef = useRef(wb);
+  useEffect(() => {
+    wbRef.current = wb;
+  });
   const [cork] = useState(() => createCorkTexture());
   const [boardTex] = useState(() => createWhiteboardTexture());
   const [animate, setAnimate] = useState(false);
@@ -82,10 +122,13 @@ export default function Board({ board, update, boardStyle }: Props) {
   // cardId stays set while the card slides back, so it can finish its animation before it unmounts.
   const [cardId, setCardId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The settings card asks for two columns when it would need a scrollbar (see ItemPopover).
+  const [cardWide, setCardWide] = useState(false);
   // Mouse cursor: the normal pointer unless the button is held (move / grabbing) or a double-click just zoomed (briefly zoom-in / zoom-out).
   const [cursor, setCursor] = useState<"move" | "grabbing" | "zoom-in" | "zoom-out" | undefined>(undefined);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"search" | "types" | null>(null);
+  const [panel, setPanel] = useState<"search" | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   // The photo stack being looked through (item + which photo).
   const [viewer, setViewer] = useState<{ id: string; index: number } | null>(null);
 
@@ -118,6 +161,16 @@ export default function Board({ board, update, boardStyle }: Props) {
     () => [...board.items].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0)),
     [board.items, depths],
   );
+  // Cards far from the screen are not rendered at all (a margin of about a screen on every side, so a fast pan never shows a
+  // gap). The selected item and the one whose card is open always render. Works from the committed view (see moveCamera).
+  const rendered = useMemo(() => {
+    const m = Math.max(size.w, size.h) / view.scale;
+    const x0 = -view.x / view.scale - m;
+    const y0 = -view.y / view.scale - m;
+    const x1 = (size.w - view.x) / view.scale + m;
+    const y1 = (size.h - view.y) / view.scale + m;
+    return sorted.filter((i) => i.id === selectedId || i.id === cardId || (i.x + i.w >= x0 && i.x <= x1 && i.y + i.h >= y0 && i.y <= y1));
+  }, [sorted, view.x, view.y, view.scale, size, selectedId, cardId]);
   // What the camera is "in": the deepest visible item (not a pin) under the middle of the screen that fills at least
   // half of the view. Drives the breadcrumb, the Up button and where new items are added.
   const current = useMemo(() => {
@@ -168,6 +221,19 @@ export default function Board({ board, update, boardStyle }: Props) {
     return () => window.clearTimeout(t);
   }, [view, board.view, boardId, update]);
 
+  // Leaving the board stops any camera move, and the page always shows the camera (a render never undoes a move).
+  useEffect(() => {
+    lodRef.current = lodKey(camRef.current.scale);
+    return () => {
+      cancelCamera();
+      window.clearTimeout(commitTimer.current);
+      window.clearTimeout(willChangeTimer.current);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    applyCamera(camRef.current);
+  });
+
   // Sections set to auto-fit follow what is inside them (including while their contents are being changed).
   useEffect(() => {
     if (autoFitSections(board) !== board) update(boardId, autoFitSections);
@@ -187,16 +253,17 @@ export default function Board({ board, update, boardStyle }: Props) {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if ((e.target as HTMLElement).closest("[data-modal]")) return;
+      if ((e.target as HTMLElement).closest("[data-modal], [data-chrome]")) return;
       e.preventDefault();
+      cancelCamera();
+      setAnimate(false);
       const r = el.getBoundingClientRect();
       const px = e.clientX - r.left;
       const py = e.clientY - r.top;
-      setView((v) => {
-        const scale = clampScale(v.scale * Math.exp(-e.deltaY * 0.0015));
-        const k = scale / v.scale;
-        return { scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
-      });
+      const v = camRef.current;
+      const scale = clampScale(v.scale * Math.exp(-e.deltaY * 0.0015));
+      const k = scale / v.scale;
+      moveCamera({ scale, x: px - (px - v.x) * k, y: py - (py - v.y) * k });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -209,12 +276,112 @@ export default function Board({ board, update, boardStyle }: Props) {
     cursorTimer.current = window.setTimeout(() => setCursor(undefined), 500);
   }
 
+  /** Which zoom-dependent things are on: when this changes, React must render at once. */
+  function lodKey(scale: number): string {
+    let k = "";
+    for (let d = 0; d <= 5; d++) k += scale >= thresholdFor(d) ? "1" : "0";
+    return k + (scale < OVERVIEW_SCALE ? "o" : "") + (scale >= FIT_SCALE ? "f" : "");
+  }
+
+  /** Put the camera on the page now: the world layer, the card copy, and the cork grain behind them. */
+  function applyCamera(v: View, moving = false) {
+    camRef.current = v;
+    const t = `translate(${v.x}px, ${v.y}px) scale(${v.scale})`;
+    for (const el of [worldRef.current, coverRef.current]) {
+      if (!el) continue;
+      el.style.transform = t;
+      // While it moves, tell the browser so it can scale the drawn layer instead of redrawing it every frame.
+      if (moving) el.style.willChange = "transform";
+    }
+    if (moving) {
+      window.clearTimeout(willChangeTimer.current);
+      willChangeTimer.current = window.setTimeout(() => {
+        if (worldRef.current) worldRef.current.style.willChange = "";
+        if (coverRef.current) coverRef.current.style.willChange = "";
+      }, 180);
+    }
+    const box = containerRef.current;
+    if (box && wbRef.current) {
+      box.style.backgroundPosition = `0 0, 0 0, ${v.x}px ${v.y}px`;
+    }
+    // Cork: a layer one grain tile bigger than the screen on each side, slid by a transform (the compositor does this, nothing
+    // is repainted); its grain size only changes when React commits, so it zooms in small steps, never per frame.
+    const cork = corkRef.current;
+    if (cork) {
+      const g = grainRef.current;
+      const mod = (n: number) => ((n % g) + g) % g;
+      cork.style.transform = `translate(${mod(v.x) - g}px, ${mod(v.y) - g}px)`;
+    }
+  }
+
+  /** Bring React's copy of the camera up to date now. */
+  function commitCamera(v: View) {
+    window.clearTimeout(commitTimer.current);
+    lodRef.current = lodKey(v.scale);
+    lastCommit.current = performance.now();
+    setView(v);
+  }
+
+  /** Move the camera: on the page at once; in React at most every ~90ms, or immediately when the zoom crosses a level. */
+  function moveCamera(v: View) {
+    applyCamera(v, true);
+    const now = performance.now();
+    // While a glide is running, React is only brought up to date when something changes (a level, overview mode) and at the
+    // end: nothing else needs it mid-flight. A gesture (wheel, pinch, drag) also refreshes every ~120ms.
+    const gliding = animRaf.current !== undefined;
+    if (lodKey(v.scale) !== lodRef.current || (!gliding && now - lastCommit.current >= 120)) {
+      commitCamera(v);
+    } else {
+      window.clearTimeout(commitTimer.current);
+      if (!gliding) commitTimer.current = window.setTimeout(() => commitCamera(camRef.current), 120);
+    }
+  }
+
+  /** Stop a camera move that is in progress (a touch, a scroll or a new move takes over). */
+  function cancelCamera() {
+    if (animRaf.current !== undefined) {
+      cancelAnimationFrame(animRaf.current);
+      animRaf.current = undefined;
+    }
+  }
+
+  /**
+   * Glide the camera to a new view with a strong ease in-out (quartic: it leaves slowly, speeds up in the middle and lands
+   * slowly). The zoom is eased in log space (so it feels even) while the point at the middle of the screen slides across, and
+   * longer moves take a little longer (650ms plus 260ms per doubling of zoom, at most 1.25s). Driven frame by frame, straight
+   * on the page (see moveCamera), so it stays smooth.
+   */
   function animateTo(next: View) {
     lastZoom.current = performance.now();
+    cancelCamera();
     window.clearTimeout(animTimer.current);
+    const from = camRef.current;
+    const { w, h } = viewportSize();
+    const c0 = { x: (w / 2 - from.x) / from.scale, y: (h / 2 - from.y) / from.scale };
+    const c1 = { x: (w / 2 - next.x) / next.scale, y: (h / 2 - next.y) / next.scale };
+    const ratio = Math.abs(Math.log2(next.scale / from.scale));
+    const duration = Math.min(1250, 650 + 260 * ratio);
+    const l0 = Math.log(from.scale);
+    const l1 = Math.log(next.scale);
     setAnimate(true);
-    setView(next);
-    animTimer.current = window.setTimeout(() => setAnimate(false), 450);
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration);
+      const e = p < 0.5 ? 8 * p * p * p * p : 1 - Math.pow(-2 * p + 2, 4) / 2; // ease in-out (quartic): a slow start and a slow landing
+      const scale = Math.exp(l0 + (l1 - l0) * e);
+      const cx = c0.x + (c1.x - c0.x) * e;
+      const cy = c0.y + (c1.y - c0.y) * e;
+      if (p < 1) {
+        moveCamera({ scale, x: w / 2 - cx * scale, y: h / 2 - cy * scale });
+        animRaf.current = requestAnimationFrame(step);
+      } else {
+        animRaf.current = undefined;
+        applyCamera(next);
+        commitCamera(next);
+        setAnimate(false);
+      }
+    };
+    animRaf.current = requestAnimationFrame(step);
   }
 
   function viewportSize() {
@@ -223,14 +390,15 @@ export default function Board({ board, update, boardStyle }: Props) {
   }
 
   function fitRect(rect: { x: number; y: number; w: number; h: number }) {
-    animateTo(fitView(rect, viewportSize()));
+    animateTo(fitView(rect, viewportSize(), 60, CHROME_TOP));
   }
 
   function zoomBy(factor: number) {
     const { w, h } = viewportSize();
-    const scale = clampScale(view.scale * factor);
-    const k = scale / view.scale;
-    animateTo({ scale, x: w / 2 - (w / 2 - view.x) * k, y: h / 2 - (h / 2 - view.y) * k });
+    const cur = camRef.current;
+    const scale = clampScale(cur.scale * factor);
+    const k = scale / cur.scale;
+    animateTo({ scale, x: w / 2 - (w / 2 - cur.x) * k, y: h / 2 - (h / 2 - cur.y) * k });
   }
 
   // ---- pointer gestures: pan, pinch, drag item, tap, double-tap ----
@@ -245,6 +413,7 @@ export default function Board({ board, update, boardStyle }: Props) {
     window.clearTimeout(animTimer.current);
     window.clearTimeout(pressTimer.current);
     window.clearTimeout(cursorTimer.current);
+    cancelCamera();
     setAnimate(false);
     try {
       containerRef.current!.setPointerCapture(e.pointerId);
@@ -260,9 +429,9 @@ export default function Board({ board, update, boardStyle }: Props) {
       gesture.current = {
         type: "pinch",
         dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-        view,
-        wx: (cx - view.x) / view.scale,
-        wy: (cy - view.y) / view.scale,
+        view: camRef.current,
+        wx: (cx - camRef.current.x) / camRef.current.scale,
+        wy: (cy - camRef.current.y) / camRef.current.scale,
       };
       return;
     }
@@ -298,7 +467,7 @@ export default function Board({ board, update, boardStyle }: Props) {
     if (hit?.dataset.itemId) {
       gesture.current = { type: "drag", id: hit.dataset.itemId, lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
     } else {
-      gesture.current = { type: "pan", sx: e.clientX, sy: e.clientY, view, moved: false };
+      gesture.current = { type: "pan", sx: e.clientX, sy: e.clientY, view: camRef.current, moved: false };
     }
 
     // Holding the mouse button down (not a quick click) swaps the pointer for the move cursor.
@@ -319,7 +488,7 @@ export default function Board({ board, update, boardStyle }: Props) {
         const g = gesture.current;
         if (!g || pointers.current.size !== 1 || (g.type !== "pan" && g.type !== "drag") || g.moved) return;
         g.held = true;
-        openEditorAt((at.x - view.x) / view.scale, (at.y - view.y) / view.scale);
+        openEditorAt((at.x - camRef.current.x) / camRef.current.scale, (at.y - camRef.current.y) / camRef.current.scale);
       }, 550);
     }
   }
@@ -335,12 +504,12 @@ export default function Board({ board, update, boardStyle }: Props) {
       const cx = (a.x + b.x) / 2;
       const cy = (a.y + b.y) / 2;
       const scale = clampScale(g.view.scale * (Math.hypot(a.x - b.x, a.y - b.y) / g.dist));
-      setView({ scale, x: cx - g.wx * scale, y: cy - g.wy * scale });
+      moveCamera({ scale, x: cx - g.wx * scale, y: cy - g.wy * scale });
     } else if (g.type === "pan") {
       const dx = e.clientX - g.sx;
       const dy = e.clientY - g.sy;
       if (Math.hypot(dx, dy) > 4) g.moved = true;
-      setView({ ...g.view, x: g.view.x + dx, y: g.view.y + dy });
+      moveCamera({ ...g.view, x: g.view.x + dx, y: g.view.y + dy });
     } else if (g.type === "resize") {
       const dx = (e.clientX - g.sx) / view.scale;
       const dy = (e.clientY - g.sy) / view.scale;
@@ -382,6 +551,7 @@ export default function Board({ board, update, boardStyle }: Props) {
   }
 
   function onPointerUp(e: React.PointerEvent) {
+    commitCamera(camRef.current);
     window.clearTimeout(pressTimer.current);
     window.clearTimeout(holdTimer.current);
     if (holding.current) {
@@ -394,7 +564,7 @@ export default function Board({ board, update, boardStyle }: Props) {
       // One finger left after a pinch: carry on panning from here.
       const [p] = [...pointers.current.values()];
       const r = containerRef.current!.getBoundingClientRect();
-      gesture.current = { type: "pan", sx: p.x + r.left, sy: p.y + r.top, view, moved: true };
+      gesture.current = { type: "pan", sx: p.x + r.left, sy: p.y + r.top, view: camRef.current, moved: true };
       return;
     }
     if (pointers.current.size > 0) return;
@@ -409,7 +579,7 @@ export default function Board({ board, update, boardStyle }: Props) {
     if (g.type === "pan" && !g.moved) {
       // Tapped something that doesn't grab (e.g. the body of an open section): find it by position.
       const p = local(e);
-      const hit = worldHit((p.x - view.x) / view.scale, (p.y - view.y) / view.scale);
+      const hit = worldHit((p.x - camRef.current.x) / camRef.current.scale, (p.y - camRef.current.y) / camRef.current.scale);
       if (hit) {
         handleTap(hit.id, e.timeStamp);
       } else {
@@ -442,10 +612,10 @@ export default function Board({ board, update, boardStyle }: Props) {
 
   function onContextMenu(e: React.MouseEvent) {
     // Leave the browser menu alone over buttons, fields and the edit card.
-    if ((e.target as HTMLElement).closest("button, input, select, textarea, a, label, [data-popover]")) return;
+    if ((e.target as HTMLElement).closest("button, input, select, textarea, a, label, [data-popover], [data-chrome]")) return;
     e.preventDefault();
     const r = containerRef.current!.getBoundingClientRect();
-    openEditorAt((e.clientX - r.left - view.x) / view.scale, (e.clientY - r.top - view.y) / view.scale);
+    openEditorAt((e.clientX - r.left - camRef.current.x) / camRef.current.scale, (e.clientY - r.top - camRef.current.y) / camRef.current.scale);
   }
 
   /** Deepest visible item under a world point (smaller wins ties), regardless of what the DOM lets through. */
@@ -464,6 +634,14 @@ export default function Board({ board, update, boardStyle }: Props) {
     return best;
   }
 
+  // Stable (never change identity) so the memoized cards are not re-rendered by a new function every render.
+  const fitNoteRef = useRef(fitNote);
+  useLayoutEffect(() => {
+    fitNoteRef.current = fitNote;
+  });
+  const stableFit = useCallback((id: string, h: number, exact?: boolean) => fitNoteRef.current(id, h, exact), []);
+  const openPhotos = useCallback((id: string) => setViewer({ id, index: 0 }), []);
+
   /** A note needs a different height for its text. Normally it only grows; an auto-fit note (exact) also shrinks. */
   function fitNote(id: string, h: number, exact?: boolean) {
     edit((b) => ({
@@ -473,19 +651,24 @@ export default function Board({ board, update, boardStyle }: Props) {
   }
 
   /** The camera that frames an item, zoomed in far enough that the item is actually shown at its level. */
-  function viewFor(item: Item): View {
-    const { w, h } = viewportSize();
+  function viewFor(item: Item, limitJump = false): View {
+    const { w, h: full } = viewportSize();
+    const h = Math.max(1, full - CHROME_TOP); // the part of the screen not under the floating bar
     // How much of the screen the item should fill: big things (top-level sections, maps) fill nearly all of it, small notes only
     // about 35-40% so they don't balloon. Grows smoothly with the item's size in between.
     const size = Math.max(item.w, item.h);
     const fill = Math.min(0.92, Math.max(0.35, 0.35 + (0.57 * (size - 200)) / 700));
     const need = thresholdFor(depths.get(item.id) ?? 0) + 0.05;
-    const scale = Math.max(need, clampScale(Math.min((w * fill) / item.w, (h * fill) / item.h)));
-    return { scale, x: w / 2 - (item.x + item.w / 2) * scale, y: h / 2 - (item.y + item.h / 2) * scale };
+    let scale = Math.max(need, clampScale(Math.min((w * fill) / item.w, (h * fill) / item.h)));
+    // A double-click zooms in by at most 50 percentage points of zoom, however small the item, so the view never lurches
+    // (25% can reach 75%, 45% can reach 95%, 100% can reach 150%, never 45% to 170%): double-click again to go further.
+    // Zooming out is never limited.
+    if (limitJump) scale = Math.min(scale, camRef.current.scale + MAX_ZOOM_STEP);
+    return { scale, x: w / 2 - (item.x + item.w / 2) * scale, y: CHROME_TOP + h / 2 - (item.y + item.h / 2) * scale };
   }
 
-  function zoomToItem(item: Item) {
-    animateTo(viewFor(item));
+  function zoomToItem(item: Item, limitJump = false) {
+    animateTo(viewFor(item, limitJump));
   }
 
   /** Select an item and bring it on screen. */
@@ -508,6 +691,10 @@ export default function Board({ board, update, boardStyle }: Props) {
     escRef.current = () => {
       if (viewer) {
         setViewer(null);
+        return;
+      }
+      if (panel) {
+        setPanel(null);
         return;
       }
       if (settingsOpen) {
@@ -561,18 +748,19 @@ export default function Board({ board, update, boardStyle }: Props) {
     const target = (targetId ? itemsById.get(targetId) : undefined) ?? item;
     if (target.id === current?.id) return;
     flashCursor("zoom-in");
-    zoomToItem(target);
+    zoomToItem(target, true);
   }
 
   // ---- adding things ----
-  function addItem(kind: ItemKind, opts: { imageData?: string; ratio?: number; parent?: Item | null; type?: ItemType } = {}) {
+  /** Where a new item goes by default: the selected section (or the one around the selected item), else the section the camera is in. */
+  function defaultParent(): Item | null {
     const sel = selected;
-    const parent =
-      opts.parent !== undefined
-        ? opts.parent
-        : sel
-          ? sel.kind === "section" ? sel : itemsById.get(sel.parentId ?? "") ?? null
-          : current ? (current.kind === "section" ? current : itemsById.get(current.parentId ?? "") ?? null) : null;
+    if (sel) return sel.kind === "section" ? sel : itemsById.get(sel.parentId ?? "") ?? null;
+    return current ? (current.kind === "section" ? current : itemsById.get(current.parentId ?? "") ?? null) : null;
+  }
+
+  function addItem(kind: ItemKind, opts: { imageData?: string; ratio?: number; parent?: Item | null; type?: ItemType } = {}) {
+    const parent = opts.parent !== undefined ? opts.parent : defaultParent();
     const depth = parent ? (depths.get(parent.id) ?? 0) + 1 : 0;
     const size = defaultSize(kind, depth);
     if (kind === "image" && opts.ratio) size.h = Math.round(size.w * opts.ratio) + 34;
@@ -661,6 +849,8 @@ export default function Board({ board, update, boardStyle }: Props) {
 
   /** Pop the edit card out beside the item (right, else left), clamped on screen; inside it if the item fills the view. */
   function popoverPlacement(item: Item): PopoverPlacement {
+    // Two columns only where there is room for them; otherwise one column that scrolls.
+    const width = cardWide && size.w >= POPOVER_WIDE + 100 ? POPOVER_WIDE : POPOVER_WIDTH;
     const { w: cw, h: ch } = size;
     const left = item.x * view.scale + view.x;
     const right = (item.x + item.w) * view.scale + view.x;
@@ -668,16 +858,21 @@ export default function Board({ board, update, boardStyle }: Props) {
     const gap = 14;
     const anchor = { w: item.w * view.scale, h: item.h * view.scale };
     const clampTop = (t: number) => Math.max(8, Math.min(t, ch - 340));
-    if (right + gap + POPOVER_WIDTH <= cw - 8) return { left: right + gap, top: clampTop(top), side: "right", anchor };
-    if (left - gap - POPOVER_WIDTH >= 8) return { left: left - gap - POPOVER_WIDTH, top: clampTop(top), side: "left", anchor };
-    return { left: Math.max(8, cw - POPOVER_WIDTH - 12), top: clampTop(top + 40), side: "inside", anchor };
+    if (right + gap + width <= cw - 8) return { left: right + gap, top: clampTop(top), side: "right", anchor, width };
+    if (left - gap - width >= 8) return { left: left - gap - width, top: clampTop(top), side: "left", anchor, width };
+    return { left: Math.max(8, cw - width - 12), top: clampTop(top + 40), side: "inside", anchor, width };
   }
 
+  // The camera zoom for CSS: text and pins use it to stay readable when zoomed out (e.g. max(30px, calc(12px / var(--s)))).
+  // --s steps in about 8% jumps (not every commit), so the text and pin sizes that use it are only recalculated when it matters.
+  const lodVars = { "--s": Math.pow(1.08, Math.round(Math.log(view.scale) / Math.log(1.08))) } as CSSProperties;
+  const overview = view.scale < OVERVIEW_SCALE;
   const wbScale = 0.5 + Math.min(Math.max(view.scale, 0.2), 2) * 0.5;
   const corkScale = 0.45 + Math.min(Math.max(view.scale, 0.2), 2) * 0.5;
+  const grain = CORK_TILE_SIZE * corkScale;
+  grainRef.current = grain;
   const depthShown =[...visible].reduce((m, id) => Math.max(m, depths.get(id) ?? 0), 0);
-  const tool =
-    "rounded-full bg-white/95 px-3.5 py-2 text-sm font-semibold text-stone-800 shadow-md active:bg-stone-200 dark:bg-zinc-600/95 dark:text-zinc-50 dark:active:bg-zinc-500";
+  const addParentName = defaultParent()?.title || null;
 
   return (
     <div
@@ -699,13 +894,7 @@ export default function Board({ board, update, boardStyle }: Props) {
               backgroundSize: `auto, auto, ${WHITEBOARD_TILE_SIZE * wbScale}px ${WHITEBOARD_TILE_SIZE * wbScale}px`,
               backgroundPosition: `0 0, 0 0, ${view.x}px ${view.y}px`,
             }
-          : {
-              backgroundColor: "#d2ac7e",
-              backgroundImage: cork ? `url(${cork})` : undefined,
-              // The cork grain follows the camera but zooms gently, so it never turns to mush.
-              backgroundSize: `${CORK_TILE_SIZE * corkScale}px ${CORK_TILE_SIZE * corkScale}px`,
-              backgroundPosition: `${view.x}px ${view.y}px`,
-            }
+          : { backgroundColor: "#d2ac7e" }
       }
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -714,14 +903,24 @@ export default function Board({ board, update, boardStyle }: Props) {
       onContextMenu={onContextMenu}
       data-cursor={cursor}
     >
-      <div
-        className="absolute left-0 top-0 origin-top-left"
-        style={{
-          transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-          transition: animate ? "transform 400ms ease" : undefined,
-        }}
-      >
-        {sorted.map((item) => {
+      {!wb && (
+        // The cork grain: a layer bigger than the screen by one tile on every side, slid by applyCamera. It follows the camera
+        // but zooms gently, so it never turns to mush.
+        <div
+          ref={corkRef}
+          aria-hidden
+          className="pointer-events-none absolute left-0 top-0"
+          style={{
+            width: size.w + 2 * grain,
+            height: size.h + 2 * grain,
+            backgroundImage: cork ? `url(${cork})` : undefined,
+            backgroundSize: `${grain}px ${grain}px`,
+            willChange: "transform",
+          }}
+        />
+      )}
+      <div ref={worldRef} className="absolute left-0 top-0 origin-top-left" style={lodVars}>
+        {rendered.map((item) => {
           const depth = depths.get(item.id) ?? 0;
           return (
             <ItemCard
@@ -735,79 +934,66 @@ export default function Board({ board, update, boardStyle }: Props) {
               linkTarget={item.id === linkFrom}
               boardStyle={boardStyle}
               type={item.typeId ? typesById.get(item.typeId) : undefined}
-              onFit={fitNote}
-              onOpenPhotos={(id) => setViewer({ id, index: 0 })}
+              onFit={view.scale >= FIT_SCALE ? stableFit : undefined}
+              overview={overview}
+              onOpenPhotos={openPhotos}
               straight={view.scale >= STRAIGHT_SCALE}
             />
           );
         })}
-        <Strings links={board.links} items={itemsById} visible={visible} whiteboard={wb} />
+        <Strings links={board.links} items={itemsById} visible={visible} whiteboard={wb} scale={view.scale} />
         {selected && visible.has(selected.id) && (
           <ResizeHandles item={selected} scale={view.scale} onSettings={() => openSettings(selected.id)} />
         )}
       </div>
 
-      {/* floating controls */}
-      <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-2" onPointerDown={(e) => e.stopPropagation()}>
-        <button className={tool} onClick={() => addItem("section")}>+ Section</button>
-        <button className={tool} onClick={() => addItem("note")}>+ Note</button>
-        <button className={tool} onClick={() => fileRef.current?.click()}>+ Photo</button>
-        <button className={tool} onClick={() => addItem("pin")}>+ Pin</button>
-        <button className={tool} onClick={() => setPanel(panel === "types" ? null : "types")} aria-expanded={panel === "types"}>+ Type ▾</button>
-        <button className={tool} onClick={() => setPanel(panel === "search" ? null : "search")} aria-expanded={panel === "search"}>🔍 Search</button>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
-      </div>
+      <TopBar
+        boardName={board.name}
+        onMenu={onOpenMenu}
+        onSearch={() => setPanel(panel === "search" ? null : "search")}
+        onAdd={() => setAddOpen(true)}
+        searchOpen={panel === "search"}
+      />
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
       <Breadcrumb crumbs={crumbs} onAll={() => fitRect(boundsOf(board.items))} onPick={(item) => zoomToItem(item)} />
-      <GestureHint />
-      <div
-        className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2"
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <div className="rounded-full bg-black/55 px-3 py-1 text-xs text-white">
-          {Math.round(view.scale * 100)}% · level {depthShown + 1}
-        </div>
-        <button className={`${tool} disabled:opacity-40`} onClick={goUp} disabled={!current} aria-label="Up one level" title="Up one level (Esc, or double-click the board)">↑ Up</button>
-        <button className={tool} onClick={() => zoomBy(1.5)} aria-label="Zoom in">+</button>
-        <button className={tool} onClick={() => zoomBy(1 / 1.5)} aria-label="Zoom out">−</button>
-        <button className={tool} onClick={() => fitRect(boundsOf(board.items))}>Fit all</button>
-      </div>
+      <GestureHint key={tipsKey} />
+      <ZoomControls
+        scale={view.scale}
+        level={depthShown + 1}
+        canGoUp={!!current}
+        onUp={goUp}
+        onZoomIn={() => zoomBy(1.5)}
+        onZoomOut={() => zoomBy(1 / 1.5)}
+        onFit={() => fitRect(boundsOf(board.items))}
+      />
 
-      {panel === "search" && (
-        <SearchPanel
-          board={board}
-          onClose={() => setPanel(null)}
-          onPick={(item) => {
-            setPanel(null);
-            focusItem(item);
-          }}
-        />
-      )}
-      {panel === "types" && (
-        <div
-          className="absolute inset-x-3 top-14 z-30 flex max-h-96 flex-col gap-1 overflow-y-auto rounded-lg bg-stone-50 p-2 text-stone-900 shadow-xl sm:right-auto sm:w-64 dark:bg-zinc-700 dark:text-zinc-50"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <div className="px-2 pt-1 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Add from a type</div>
-          {board.types.length === 0 && <div className="px-2 py-2 text-sm">No types yet. Use Types in the top bar to design some.</div>}
-          {board.types.map((t) => (
-            <button
-              key={t.id}
-              className="flex items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-stone-200 active:bg-stone-300 dark:hover:bg-zinc-600"
-              onClick={() => {
-                setPanel(null);
-                addItem(t.kind, { type: t });
-              }}
-            >
-              <span className="h-4 w-4 shrink-0 rounded-sm border border-black/25" style={{ background: t.color }} />
-              <span className="min-w-0 flex-1 truncate font-semibold">{t.name}</span>
-              <span className="text-xs text-stone-500 dark:text-zinc-300">{t.kind}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <SearchPanel
+        board={board}
+        open={panel === "search"}
+        onClose={() => setPanel(null)}
+        onPick={(item) => {
+          setPanel(null);
+          focusItem(item);
+        }}
+      />
+
+      <AddDrawer
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        parentName={addParentName}
+        types={board.types}
+        onAdd={(kind) => addItem(kind)}
+        onAddPhoto={() => fileRef.current?.click()}
+        onAddType={(type) => addItem(type.kind, { type })}
+        onOpenTypes={onOpenTypes}
+      />
 
       {linkFrom && (
-        <div className="absolute inset-x-0 top-14 z-20 mx-auto w-fit rounded-full bg-red-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md">
+        <div
+          data-chrome
+          className="absolute inset-x-0 z-20 mx-auto w-fit rounded-ui bg-thread px-4 py-2 text-sm font-bold text-on-thread shadow-paper"
+          style={{ top: "calc(env(safe-area-inset-top) + 4.25rem)" }}
+        >
           Tap the item to tie the string to
         </div>
       )}
@@ -819,6 +1005,8 @@ export default function Board({ board, update, boardStyle }: Props) {
             item={popItem}
             leaving={leaving}
             placement={popoverPlacement(popItem)}
+            wide={popoverPlacement(popItem).width === POPOVER_WIDE}
+            onNeedWide={setCardWide}
             maxHeight={Math.max(160, size.h - popoverPlacement(popItem).top - 8)}
             links={board.links}
             itemsById={itemsById}
@@ -864,11 +1052,7 @@ export default function Board({ board, update, boardStyle }: Props) {
 
       {/* A copy of the item (and what is inside it) drawn above the edit card, so the card slides out from truly underneath. */}
       {showPopover && (
-        <div
-          className="no-pointer absolute left-0 top-0 z-40 origin-top-left"
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-          aria-hidden
-        >
+        <div ref={coverRef} className="no-pointer absolute left-0 top-0 z-40 origin-top-left" style={lodVars} aria-hidden>
           {coverItems.map((item) => {
             const depth = depths.get(item.id) ?? 0;
             return (
@@ -884,6 +1068,7 @@ export default function Board({ board, update, boardStyle }: Props) {
                 boardStyle={boardStyle}
                 type={item.typeId ? typesById.get(item.typeId) : undefined}
                 cover={leaving ? "solid" : "enter"}
+                overview={overview}
                 straight={view.scale >= STRAIGHT_SCALE}
               />
             );
@@ -894,6 +1079,7 @@ export default function Board({ board, update, boardStyle }: Props) {
             items={itemsById}
             visible={visible}
             whiteboard={wb}
+            scale={view.scale}
           />
           {!leaving && popItem && popItem.kind !== "pin" && <ResizeHandles item={popItem} scale={view.scale} />}
         </div>

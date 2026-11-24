@@ -9,10 +9,9 @@ import { useTheme } from "@/lib/theme";
 import { useBoardStyle } from "@/lib/boardStyle";
 import type { Board as BoardData, BoardExport } from "@/lib/types";
 import Board from "./Board";
+import MenuDrawer from "./MenuDrawer";
 import TypesEditor from "./TypesEditor";
-
-const btn =
-  "shrink-0 rounded-md bg-stone-300 px-2.5 py-1.5 text-sm font-medium text-stone-900 active:bg-stone-400 dark:bg-zinc-500 dark:text-white dark:active:bg-zinc-400";
+import { resetHint } from "./GestureHint";
 
 export default function Workspace() {
   const { boards, currentId, setCurrentId, ready, update, add, remove } = useBoards();
@@ -20,10 +19,13 @@ export default function Workspace() {
   const { boardStyle, setBoardStyle } = useBoardStyle();
   const importRef = useRef<HTMLInputElement>(null);
   const [typesOpen, setTypesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Bumped to bring the gesture tips back after they were dismissed.
+  const [tipsKey, setTipsKey] = useState(0);
   const current = boards.find((b) => b.id === currentId);
 
   if (!ready || !current) {
-    return <div className="flex h-dvh items-center justify-center bg-amber-200 text-stone-800 dark:bg-zinc-600 dark:text-zinc-100">Loading…</div>;
+    return <div className="flex h-dvh items-center justify-center bg-paper-2 text-lg font-semibold text-ink-soft">Loading…</div>;
   }
 
   function newBoard() {
@@ -70,37 +72,38 @@ export default function Workspace() {
   }
 
   return (
-    <div className="flex h-dvh flex-col">
-      <header className="z-10 flex items-center gap-2 overflow-x-auto bg-stone-100 px-3 py-2 text-stone-900 dark:bg-zinc-700 dark:text-white">
-        <span className="shrink-0 font-bold">📌 Tether</span>
-        <select
-          value={current.id}
-          onChange={(e) => setCurrentId(e.target.value)}
-          className="min-w-0 max-w-40 rounded-md bg-stone-300 px-2 py-1.5 text-sm text-stone-900 dark:bg-zinc-500 dark:text-white"
-        >
-          {boards.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <button className={btn} onClick={newBoard}>New</button>
-        <button className={btn} onClick={rename}>Rename</button>
-        <button className={btn} onClick={exportBoard}>Export</button>
-        <button className={btn} onClick={() => importRef.current?.click()}>Import</button>
-        <button className={btn} onClick={del}>Delete</button>
-        <button className={btn} onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle light or dark theme">
-          {theme === "dark" ? "☀ Light" : "☾ Dark"}
-        </button>
-        <button className={btn} onClick={() => setTypesOpen(true)}>Types</button>
-        <button className={btn} onClick={() => setBoardStyle(boardStyle === "cork" ? "whiteboard" : "cork")} aria-label="Switch between cork board and whiteboard">
-          {boardStyle === "cork" ? "▭ Whiteboard" : "📌 Cork"}
-        </button>
-        <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={importBoard} />
-      </header>
-      <main className="min-h-0 flex-1">
-        <Board key={current.id} board={current} update={update} boardStyle={boardStyle} />
-      </main>
+    <div className="h-dvh bg-paper-2">
+      <Board
+        key={current.id}
+        board={current}
+        update={update}
+        boardStyle={boardStyle}
+        onOpenMenu={() => setMenuOpen(true)}
+        onOpenTypes={() => setTypesOpen(true)}
+        tipsKey={tipsKey}
+      />
+      <MenuDrawer
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        boards={boards}
+        currentId={current.id}
+        onPickBoard={setCurrentId}
+        onNewBoard={newBoard}
+        onRename={rename}
+        onDelete={del}
+        onExport={exportBoard}
+        onImport={() => importRef.current?.click()}
+        theme={theme}
+        onTheme={setTheme}
+        boardStyle={boardStyle}
+        onBoardStyle={setBoardStyle}
+        onOpenTypes={() => setTypesOpen(true)}
+        onShowTips={() => {
+          resetHint();
+          setTipsKey((k) => k + 1);
+        }}
+      />
+      <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={importBoard} />
       {typesOpen && (
         <TypesEditor
           types={current.types}

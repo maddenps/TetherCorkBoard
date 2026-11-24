@@ -5,6 +5,10 @@ import { PAPER_COLORS } from "@/lib/board";
 import { FIELD_TYPES, defaultTypes, newField, newType } from "@/lib/model";
 import { BUILT_IN_PACKS, makePack, mergePack, parsePack, type Pack } from "@/lib/packs";
 import type { FieldDef, FieldType, ItemType } from "@/lib/types";
+import { useEscape } from "./ui/useEscape";
+import Fastener from "./ui/Fastener";
+import Folded from "./ui/Folded";
+import { useVisit } from "@/lib/fasteners";
 
 interface Props {
   types: ItemType[];
@@ -13,15 +17,17 @@ interface Props {
 }
 
 const input =
-  "w-full rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-zinc-500 dark:bg-zinc-600 dark:text-white";
+  "chrome-focus w-full rounded-ui border border-line bg-paper-2 px-2.5 py-2 text-sm text-ink placeholder:text-ink-faint";
 const smallBtn =
-  "shrink-0 rounded-md bg-stone-300 px-2.5 py-1.5 text-sm font-medium text-stone-900 active:bg-stone-400 dark:bg-zinc-500 dark:text-white dark:active:bg-zinc-400";
+  "chrome-focus inline-flex min-h-10 shrink-0 items-center justify-center rounded-ui border border-line bg-paper px-3.5 text-sm font-semibold text-ink hover:bg-paper-2 active:bg-paper-3 disabled:opacity-40";
 
 /**
  * Design the item types for this board: a name, whether it is a note or a section, a paper colour, and any
  * number of fields (text, number, link, checkbox, choice). Changes apply to the board straight away.
  */
 export default function TypesEditor({ types, onChange, onClose }: Props) {
+  useEscape(true, onClose);
+  const visit = useVisit();
   const [selectedId, setSelectedId] = useState<string | null>(types[0]?.id ?? null);
   const current = types.find((t) => t.id === selectedId) ?? null;
   const packFile = useRef<HTMLInputElement>(null);
@@ -91,10 +97,21 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" role="dialog" aria-label="Item types">
-      <div className="flex max-h-full w-full max-w-xl flex-col rounded-xl bg-stone-100 p-4 text-stone-900 shadow-2xl dark:bg-zinc-700 dark:text-zinc-50">
+    <div data-modal className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 sm:items-center sm:p-3" role="dialog" aria-label="Item types">
+      <Folded
+        className="relative w-full max-w-xl"
+        style={{ maxHeight: "calc(100dvh - 1.5rem)" }}
+        paperClassName="flex flex-col rounded-t-ui p-4 sm:rounded-ui"
+        paperStyle={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)", maxHeight: "calc(100dvh - 1.5rem)" }}
+        fasteners={
+          <>
+            <Fastener id="types" visit={visit} at="top-center" chance={0.7} />
+            <Fastener id="types-corner" visit={visit} at="top-left" chance={0.35} kinds={["staple", "clip"]} />
+          </>
+        }
+      >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">Item types</h2>
+          <h2 className="text-xl font-bold">Item types and packs</h2>
           <button className={smallBtn} onClick={onClose}>
             Done
           </button>
@@ -105,7 +122,7 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
             <button
               key={t.id}
               onClick={() => setSelectedId(t.id)}
-              className={`rounded-full border-2 px-3 py-1 text-sm font-semibold text-stone-900 ${t.id === selectedId ? "border-stone-900" : "border-transparent"}`}
+              className={`rounded-ui border-2 px-3 py-1.5 text-sm font-semibold text-stone-900 ${t.id === selectedId ? "border-ink" : "border-transparent"}`}
               style={{ background: t.color }}
             >
               {t.name || "(unnamed)"}
@@ -122,7 +139,7 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
         </div>
 
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Packs</span>
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Packs</span>
           {BUILT_IN_PACKS.map((p) => (
             <button key={p.name} className={smallBtn} onClick={() => addPack(p)} title={p.description}>
               + {p.name}
@@ -136,7 +153,7 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
           </button>
           <input ref={packFile} type="file" accept=".json,application/json" className="hidden" onChange={loadPackFile} />
           {message && (
-            <div className="w-full text-xs text-stone-600 dark:text-zinc-300" role="status">
+            <div className="w-full text-xs text-ink-soft" role="status">
               {message}
             </div>
           )}
@@ -146,11 +163,11 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
           <div className="min-h-0 space-y-3 overflow-y-auto">
             <div className="flex flex-wrap items-end gap-3">
               <label className="min-w-0 flex-1 text-sm">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Name</span>
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-soft">Name</span>
                 <input className={input} value={current.name} onChange={(e) => patchType({ name: e.target.value })} />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Looks like</span>
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-soft">Looks like</span>
                 <select className={input} value={current.kind} onChange={(e) => patchType({ kind: e.target.value === "section" ? "section" : "note" })}>
                   <option value="note">Sticky note</option>
                   <option value="section">Section (holds other items)</option>
@@ -164,17 +181,17 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
                   key={c}
                   aria-label={`Colour ${c}`}
                   onClick={() => patchType({ color: c })}
-                  className={`h-8 w-8 rounded-sm border-2 ${current.color === c ? "border-stone-900 dark:border-white" : "border-black/20"}`}
+                  className={`h-8 w-8 rounded-ui-sm border-2 ${current.color === c ? "border-ink" : "border-line"}`}
                   style={{ background: c }}
                 />
               ))}
             </div>
 
             <div>
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Fields</div>
-              {current.fields.length === 0 && <div className="py-2 text-sm text-stone-500 dark:text-zinc-300">No fields yet.</div>}
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Fields</div>
+              {current.fields.length === 0 && <div className="py-2 text-sm text-ink-soft">No fields yet.</div>}
               {current.fields.map((f, i) => (
-                <div key={f.id} className="mb-2 rounded-md bg-stone-200 p-2 dark:bg-zinc-600">
+                <div key={f.id} className="mb-2 rounded-ui-sm bg-paper-2 p-2">
                   <div className="flex items-center gap-2">
                     <input className={input} value={f.name} onChange={(e) => patchField(f.id, { name: e.target.value })} aria-label="Field name" />
                     <select
@@ -198,7 +215,7 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
                     <button className={smallBtn} onClick={() => moveField(i, 1)} aria-label="Move field down">
                       ↓
                     </button>
-                    <button className={`${smallBtn} text-red-700 dark:text-red-300`} onClick={() => patchType({ fields: current.fields.filter((x) => x.id !== f.id) })} aria-label="Delete field">
+                    <button className={`${smallBtn} text-thread`} onClick={() => patchType({ fields: current.fields.filter((x) => x.id !== f.id) })} aria-label="Delete field">
                       ✕
                     </button>
                   </div>
@@ -219,15 +236,15 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
             </div>
 
             <div className="pt-1">
-              <button className={`${smallBtn} text-red-700 dark:text-red-300`} onClick={deleteType}>
+              <button className={`${smallBtn} text-thread`} onClick={deleteType}>
                 Delete this type
               </button>
             </div>
           </div>
         ) : (
-          <div className="py-4 text-sm text-stone-500 dark:text-zinc-300">Pick a type to edit it, or make a new one.</div>
+          <div className="py-4 text-sm text-ink-soft">Pick a type to edit it, or make a new one.</div>
         )}
-      </div>
+      </Folded>
     </div>
   );
 }

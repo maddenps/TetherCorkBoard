@@ -10,13 +10,20 @@ export default function Strings({
   items,
   visible,
   whiteboard = false,
+  scale = 1,
 }: {
   links: Link[];
   items: Map<string, Item>;
   visible: Set<string>;
   whiteboard?: boolean;
+  /** The camera zoom: when zoomed out, lines, dots and labels are drawn bigger (in the world) so they stay readable. */
+  scale?: number;
 }) {
   const fallback = whiteboard ? "#2563eb" : "#b91c1c";
+  // never thinner than about 1.8px on screen, labels never smaller than about 11px
+  const line = Math.max(4, 1.8 / scale);
+  const dot = Math.max(6, 3.5 / scale);
+  const labelSize = Math.max(18, 11 / scale);
   return (
     <svg
       width={1}
@@ -46,13 +53,13 @@ export default function Strings({
         return (
           <g key={l.id}>
             {!whiteboard && style === "string" && (
-              <path d={d} transform="translate(3 4)" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth={4} strokeLinecap="round" />
+              <path d={d} transform="translate(3 4)" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth={line} strokeLinecap="round" />
             )}
             <path
               d={d}
               fill="none"
               stroke={color}
-              strokeWidth={4}
+              strokeWidth={line}
               strokeLinecap="round"
               strokeDasharray={style === "dashed" ? "14 12" : undefined}
             />
@@ -60,20 +67,20 @@ export default function Strings({
               <polygon points={`${q.x},${q.y} ${head(-1)} ${head(1)}`} fill={color} stroke={color} strokeWidth={2} strokeLinejoin="round" />
             ) : whiteboard || style !== "string" ? (
               <>
-                <circle cx={p.x} cy={p.y} r={6} fill={color} />
-                <circle cx={q.x} cy={q.y} r={6} fill={color} />
+                <circle cx={p.x} cy={p.y} r={dot} fill={color} />
+                <circle cx={q.x} cy={q.y} r={dot} fill={color} />
               </>
             ) : null}
             {l.label && (
               <text
                 x={lx}
-                y={ly - 8}
+                y={ly - 8 * (labelSize / 18)}
                 textAnchor="middle"
-                fontSize={18}
+                fontSize={labelSize}
                 fontWeight={700}
                 fill="#1c1917"
                 stroke="rgba(255,255,255,0.92)"
-                strokeWidth={5}
+                strokeWidth={Math.max(5, labelSize * 0.28)}
                 paintOrder="stroke"
                 strokeLinejoin="round"
               >

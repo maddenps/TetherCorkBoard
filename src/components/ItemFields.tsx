@@ -64,15 +64,18 @@ interface Props {
   onPatch: (patch: Partial<Item>) => void;
 }
 
-/** The type picker, the type's own fields, and the link every item can carry. */
+/**
+ * The type picker, the type's own fields, and the link every item can carry. Returns separate blocks (no wrapper) so that
+ * when the settings card is laid out in two columns each one can sit in either column and the columns come out even.
+ */
 export default function ItemFields({ item, types, onPatch }: Props) {
   const type = item.typeId ? types.find((t) => t.id === item.typeId) : undefined;
   const eligible = item.kind === "note" || item.kind === "section";
 
   return (
-    <div className="mb-3 space-y-2">
+    <>
       {eligible && types.length > 0 && (
-        <label className="flex items-center gap-2 text-sm">
+        <label className="mb-2 flex items-center gap-2 text-sm">
           <span className="text-stone-600">Type</span>
           <select
             value={type?.id ?? ""}
@@ -90,7 +93,7 @@ export default function ItemFields({ item, types, onPatch }: Props) {
       )}
 
       {type?.fields.map((def) => (
-        <div key={def.id} className="text-sm">
+        <div key={def.id} className="mb-2 text-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">{def.name}</div>
           <FieldInput
             def={def}
@@ -100,7 +103,7 @@ export default function ItemFields({ item, types, onPatch }: Props) {
         </div>
       ))}
 
-      <div className="text-sm">
+      <div className="mb-3 text-sm">
         <div className="text-xs font-semibold uppercase tracking-wide text-stone-600">Link</div>
         <div className="flex items-center gap-2">
           <input
@@ -112,6 +115,6 @@ export default function ItemFields({ item, types, onPatch }: Props) {
           <OpenLink url={item.url} />
         </div>
       </div>
-    </div>
+    </>
   );
 }
