@@ -1,0 +1,62 @@
+{
+  "format": "tethercorkpack",
+  "version": 1,
+  "name": "Climbing trip",
+  "description": "Area, Location, Stay, Boulder and Route types for planning a climbing or bouldering trip.",
+  "types": [
+    {
+      "id": "type-area",
+      "name": "Area",
+      "kind": "section",
+      "color": "#c9eab8",
+      "fields": [
+        { "id": "area-access", "name": "Access", "type": "longtext" },
+        { "id": "area-map", "name": "Map link", "type": "link" }
+      ]
+    },
+    {
+      "id": "type-location",
+      "name": "Location",
+      "kind": "section",
+      "color": "#ffd0dc",
+      "fields": [
+        { "id": "loc-parking", "name": "Parking", "type": "longtext" },
+        { "id": "loc-directions", "name": "Directions", "type": "longtext" },
+        { "id": "loc-link", "name": "Link", "type": "link" }
+      ]
+    },
+    {
+      "id": "type-stay",
+      "name": "Stay",
+      "kind": "section",
+      "color": "#e6d4ff",
+      "fields": [
+        { "id": "stay-address", "name": "Address", "type": "text" },
+        { "id": "stay-times", "name": "Check-in / out", "type": "text" },
+        { "id": "stay-link", "name": "Booking link", "type": "link" }
+      ]
+    },
+    {
+      "id": "type-boulder",
+      "name": "Boulder",
+      "kind": "section",
+      "color": "#c6e2ff",
+      "fields": [
+        { "id": "boulder-approach", "name": "Approach", "type": "longtext" },
+        { "id": "boulder-landing", "name": "Landing", "type": "text" }
+      ]
+    },
+    {
+      "id": "type-route",
+      "name": "Route",
+      "kind": "note",
+      "color": "#fff4a3",
+      "fields": [
+        { "id": "route-grade", "name": "Grade", "type": "text" },
+        { "id": "route-status", "name": "Status", "type": "select", "options": ["To try", "Project", "Sent"] },
+        { "id": "route-video", "name": "Video", "type": "link" },
+        { "id": "route-beta", "name": "Beta", "type": "longtext" }
+      ]
+    }
+  ]
+}

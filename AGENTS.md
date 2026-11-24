@@ -14,7 +14,7 @@ All documentation lives in `Specs/` (index: `Specs/README.md`). Read `Specs/Proj
 
 ## What this app is
 
-Tether Cork Board is an offline-first, mobile-friendly web app for planning big projects in 2D space instead of a linear list: notes, photos and sections pinned to a zoomable cork board, joined with string. Zoom level reveals the hierarchy (area, then boulder, then route). It must keep working with **no signal**, so there is no server and no account: data lives in the browser (IndexedDB) and can be exported and imported as JSON.
+Tether Cork Board is an offline-first, mobile-friendly web app for planning big projects in 2D space instead of a linear list: notes, photos and sections pinned to a zoomable cork board, joined with string. Zoom level reveals the hierarchy (sections hold sections hold notes). The app is general purpose: what the levels mean (a climbing trip's areas, boulders and routes, a renovation's rooms and jobs) comes from item types and loadable packs, not from the code. It must keep working with **no signal**, so there is no server and no account: data lives in the browser (IndexedDB) and can be exported and imported as JSON.
 
 ## Offline-first rules (mandatory)
 

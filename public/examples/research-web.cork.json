@@ -1,0 +1,645 @@
+{
+ "format": "tethercorkboard",
+ "version": 1,
+ "board": {
+  "id": "example-research-web",
+  "name": "Example: cooling a city (a web of linked ideas)",
+  "items": [
+   {
+    "text": "Start here. Follow the strings from causes, to effects, to what we could do about them.",
+    "parentId": null,
+    "id": "goal",
+    "kind": "note",
+    "x": 1210,
+    "y": -330,
+    "w": 320,
+    "h": 190,
+    "title": "How do we keep our city cooler?",
+    "color": "#e6d4ff",
+    "typeId": "type-question",
+    "fields": {
+     "question-status": "Researching"
+    }
+   },
+   {
+    "text": "",
+    "parentId": null,
+    "id": "causes",
+    "kind": "section",
+    "x": 0,
+    "y": 0,
+    "w": 920,
+    "h": 700,
+    "title": "Causes",
+    "color": "#c9eab8",
+    "typeId": "type-topic",
+    "fields": {
+     "topic-summary": "Why a city runs hotter than the countryside around it."
+    }
+   },
+   {
+    "text": "",
+    "parentId": null,
+    "id": "effects",
+    "kind": "section",
+    "x": 1000,
+    "y": 0,
+    "w": 920,
+    "h": 700,
+    "title": "Effects",
+    "color": "#ffd0dc",
+    "typeId": "type-topic",
+    "fields": {
+     "topic-summary": "What the extra heat does to people and the city."
+    }
+   },
+   {
+    "text": "",
+    "parentId": null,
+    "id": "solutions",
+    "kind": "section",
+    "x": 2000,
+    "y": 0,
+    "w": 920,
+    "h": 700,
+    "title": "Solutions",
+    "color": "#c6e2ff",
+    "typeId": "type-topic",
+    "fields": {
+     "topic-summary": "Things a city can change to bring temperatures down."
+    }
+   },
+   {
+    "text": "Asphalt and dark roofs soak up sunlight and give it back as heat.",
+    "parentId": "causes",
+    "id": "c-dark",
+    "kind": "note",
+    "title": "Dark surfaces",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 30,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Fewer plants and trees means less shade and less cooling from evaporation.",
+    "parentId": "causes",
+    "id": "c-green",
+    "kind": "note",
+    "title": "Less vegetation",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 310,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Air conditioners, vehicles and industry release heat straight into the air.",
+    "parentId": "causes",
+    "id": "c-waste",
+    "kind": "note",
+    "title": "Waste heat",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 590,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Tall buildings and narrow streets slow the wind and hold heat in.",
+    "parentId": "causes",
+    "id": "c-canyon",
+    "kind": "note",
+    "title": "Street canyons",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 30,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Our city may not match the general picture.",
+    "parentId": "causes",
+    "id": "q-share",
+    "kind": "note",
+    "title": "How much is each cause worth here?",
+    "color": "#ffd0dc",
+    "typeId": "type-question",
+    "fields": {
+     "question-status": "Open"
+    },
+    "x": 310,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "More air conditioning on hot days pushes demand up.",
+    "parentId": "effects",
+    "id": "e-energy",
+    "kind": "note",
+    "title": "Higher energy use",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 1030,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "The city stays warmer after sunset than nearby countryside, so there is less time to cool off.",
+    "parentId": "effects",
+    "id": "e-nights",
+    "kind": "note",
+    "title": "Hot nights",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 1310,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Long hot spells with no cool night are hardest on older people and young children.",
+    "parentId": "effects",
+    "id": "e-health",
+    "kind": "note",
+    "title": "Heat illness",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 1590,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Heat speeds up the chemistry that makes smog.",
+    "parentId": "effects",
+    "id": "e-smog",
+    "kind": "note",
+    "title": "Worse air quality",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 1030,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Probably those with the least shade.",
+    "parentId": "effects",
+    "id": "q-where",
+    "kind": "note",
+    "title": "Which neighbourhoods are hit hardest?",
+    "color": "#ffd0dc",
+    "typeId": "type-question",
+    "fields": {
+     "question-status": "Open"
+    },
+    "x": 1310,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Shade and evaporation cool the street, and they last for decades.",
+    "parentId": "solutions",
+    "id": "s-trees",
+    "kind": "note",
+    "title": "Street trees",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 2030,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Light-coloured roofs reflect sunlight instead of absorbing it.",
+    "parentId": "solutions",
+    "id": "s-coolroof",
+    "kind": "note",
+    "title": "Cool roofs",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "High"
+    },
+    "x": 2310,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Plants on a roof insulate the building and cool the air above it.",
+    "parentId": "solutions",
+    "id": "s-greenroof",
+    "kind": "note",
+    "title": "Green roofs",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 2590,
+    "y": 90,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Pale road and path surfaces stay cooler in the sun.",
+    "parentId": "solutions",
+    "id": "s-pave",
+    "kind": "note",
+    "title": "Lighter pavements",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 2030,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Open green space and fountains give people places to cool down.",
+    "parentId": "solutions",
+    "id": "s-parks",
+    "kind": "note",
+    "title": "Parks and water",
+    "color": "#fff4a3",
+    "typeId": "type-claim",
+    "fields": {
+     "claim-confidence": "Medium"
+    },
+    "x": 2310,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "Compare cost against how many people each option helps.",
+    "parentId": "solutions",
+    "id": "q-afford",
+    "kind": "note",
+    "title": "What can we afford first?",
+    "color": "#ffd0dc",
+    "typeId": "type-question",
+    "fields": {
+     "question-status": "Researching"
+    },
+    "x": 2590,
+    "y": 280,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "",
+    "parentId": null,
+    "id": "reading",
+    "kind": "section",
+    "x": 1000,
+    "y": 900,
+    "w": 920,
+    "h": 420,
+    "title": "Reading list",
+    "color": "#ffffff",
+    "typeId": "type-topic",
+    "fields": {
+     "topic-summary": "Where the claims come from, and what we still need to find."
+    }
+   },
+   {
+    "text": "A plain-language explanation of causes, effects and ways to reduce heat islands.",
+    "parentId": "reading",
+    "id": "src-epa",
+    "kind": "note",
+    "title": "Heat island overview",
+    "color": "#ffffff",
+    "typeId": "type-source",
+    "fields": {
+     "source-publisher": "US EPA",
+     "source-link": "https://www.epa.gov/heatislands"
+    },
+    "x": 1030,
+    "y": 990,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "A map of surface temperatures by neighbourhood.",
+    "parentId": "reading",
+    "id": "src-map",
+    "kind": "note",
+    "title": "City heat map (to find)",
+    "color": "#ffffff",
+    "typeId": "type-source",
+    "fields": {
+     "source-publisher": "Local council or university"
+    },
+    "x": 1310,
+    "y": 990,
+    "w": 250,
+    "h": 160
+   },
+   {
+    "text": "How much shade each street really has.",
+    "parentId": "reading",
+    "id": "src-trees",
+    "kind": "note",
+    "title": "Tree canopy survey (to find)",
+    "color": "#ffffff",
+    "typeId": "type-source",
+    "fields": {
+     "source-publisher": "Local council"
+    },
+    "x": 1590,
+    "y": 990,
+    "w": 250,
+    "h": 160
+   }
+  ],
+  "links": [
+   {
+    "id": "l-1",
+    "from": "goal",
+    "to": "causes",
+    "label": "start here",
+    "style": "line"
+   },
+   {
+    "id": "l-2",
+    "from": "goal",
+    "to": "effects",
+    "label": "then",
+    "style": "line"
+   },
+   {
+    "id": "l-3",
+    "from": "goal",
+    "to": "solutions",
+    "label": "then",
+    "style": "line"
+   },
+   {
+    "id": "l-4",
+    "from": "c-dark",
+    "to": "e-nights",
+    "label": "holds heat into the night",
+    "style": "arrow"
+   },
+   {
+    "id": "l-5",
+    "from": "c-canyon",
+    "to": "e-nights",
+    "label": "traps heat",
+    "style": "arrow"
+   },
+   {
+    "id": "l-6",
+    "from": "c-green",
+    "to": "e-nights",
+    "label": "less cooling",
+    "style": "arrow"
+   },
+   {
+    "id": "l-7",
+    "from": "c-waste",
+    "to": "e-energy",
+    "label": "drives",
+    "style": "arrow"
+   },
+   {
+    "id": "l-8",
+    "from": "c-waste",
+    "to": "e-smog",
+    "label": "adds to",
+    "style": "arrow"
+   },
+   {
+    "id": "l-9",
+    "from": "e-nights",
+    "to": "e-health",
+    "label": "leads to",
+    "style": "arrow"
+   },
+   {
+    "id": "l-10",
+    "from": "e-energy",
+    "to": "c-waste",
+    "label": "feeds back into",
+    "style": "dashed"
+   },
+   {
+    "id": "l-11",
+    "from": "s-trees",
+    "to": "c-green",
+    "label": "restores",
+    "style": "arrow"
+   },
+   {
+    "id": "l-12",
+    "from": "s-trees",
+    "to": "c-dark",
+    "label": "shades",
+    "style": "arrow"
+   },
+   {
+    "id": "l-13",
+    "from": "s-coolroof",
+    "to": "c-dark",
+    "label": "reflects",
+    "style": "arrow"
+   },
+   {
+    "id": "l-14",
+    "from": "s-pave",
+    "to": "c-dark",
+    "label": "reflects",
+    "style": "arrow"
+   },
+   {
+    "id": "l-15",
+    "from": "s-greenroof",
+    "to": "c-green",
+    "label": "replaces",
+    "style": "arrow"
+   },
+   {
+    "id": "l-16",
+    "from": "s-parks",
+    "to": "e-nights",
+    "label": "cools",
+    "style": "arrow"
+   },
+   {
+    "id": "l-17",
+    "from": "q-where",
+    "to": "q-afford",
+    "label": "informs",
+    "style": "dashed"
+   },
+   {
+    "id": "l-18",
+    "from": "q-share",
+    "to": "q-afford",
+    "label": "informs",
+    "style": "dashed"
+   },
+   {
+    "id": "l-19",
+    "from": "src-epa",
+    "to": "c-dark",
+    "label": "supports",
+    "style": "dashed"
+   },
+   {
+    "id": "l-20",
+    "from": "src-epa",
+    "to": "s-coolroof",
+    "label": "supports",
+    "style": "dashed"
+   },
+   {
+    "id": "l-21",
+    "from": "src-epa",
+    "to": "s-trees",
+    "label": "supports",
+    "style": "dashed"
+   },
+   {
+    "id": "l-22",
+    "from": "src-map",
+    "to": "q-where",
+    "label": "would answer",
+    "style": "dashed"
+   },
+   {
+    "id": "l-23",
+    "from": "src-trees",
+    "to": "q-share",
+    "label": "would help answer",
+    "style": "dashed"
+   },
+   {
+    "id": "l-24",
+    "from": "src-trees",
+    "to": "s-trees",
+    "label": "shows the gaps",
+    "style": "dashed"
+   }
+  ],
+  "types": [
+   {
+    "id": "type-topic",
+    "name": "Topic",
+    "kind": "section",
+    "color": "#c6e2ff",
+    "fields": [
+     {
+      "id": "topic-summary",
+      "name": "Summary",
+      "type": "longtext"
+     }
+    ]
+   },
+   {
+    "id": "type-claim",
+    "name": "Claim",
+    "kind": "note",
+    "color": "#fff4a3",
+    "fields": [
+     {
+      "id": "claim-confidence",
+      "name": "Confidence",
+      "type": "select",
+      "options": [
+       "Low",
+       "Medium",
+       "High"
+      ]
+     },
+     {
+      "id": "claim-source",
+      "name": "Source",
+      "type": "link"
+     }
+    ]
+   },
+   {
+    "id": "type-question",
+    "name": "Question",
+    "kind": "note",
+    "color": "#ffd0dc",
+    "fields": [
+     {
+      "id": "question-status",
+      "name": "Status",
+      "type": "select",
+      "options": [
+       "Open",
+       "Researching",
+       "Answered"
+      ]
+     }
+    ]
+   },
+   {
+    "id": "type-source",
+    "name": "Source",
+    "kind": "note",
+    "color": "#ffffff",
+    "fields": [
+     {
+      "id": "source-publisher",
+      "name": "Publisher",
+      "type": "text"
+     },
+     {
+      "id": "source-link",
+      "name": "Link",
+      "type": "link"
+     }
+    ]
+   }
+  ],
+  "view": {
+   "x": 0,
+   "y": 0,
+   "scale": 0
+  },
+  "updatedAt": 0
+ }
+}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PAPER_COLORS,
+  autoFitSections,
   boundsOf,
   clampScale,
   computeDepths,
@@ -22,8 +23,11 @@ import type { BoardStyle } from "@/lib/boardStyle";
 import { PIN_COLORS } from "@/lib/model";
 import type { Board as BoardData, Item, ItemKind, ItemType, Link, View } from "@/lib/types";
 import ItemCard from "./ItemCard";
+import PhotoViewer from "./PhotoViewer";
 import ItemPopover, { POPOVER_WIDTH, type PopoverPlacement } from "./ItemPopover";
-import ResizeHandles, { type Corner } from "./ResizeHandles";
+import ResizeHandles, { type Grip } from "./ResizeHandles";
+import Breadcrumb from "./Breadcrumb";
+import GestureHint from "./GestureHint";
 import SearchPanel from "./SearchPanel";
 import Strings from "./Strings";
 
@@ -31,11 +35,14 @@ type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
 const MIN_W = 90;
 const MIN_H = 60;
+/** At or above this zoom, cards are drawn square so their text is sharp. */
+const STRAIGHT_SCALE = 0.3;
 type Gesture =
-  | { type: "resize"; id: string; corner: Corner; sx: number; sy: number; orig: Rect }
-  | { type: "pan"; sx: number; sy: number; view: View; moved: boolean }
+  | { type: "resize"; id: string; corner: Grip; sx: number; sy: number; orig: Rect }
+  | { type: "pan"; sx: number; sy: number; view: View; moved: boolean; held?: boolean }
   | { type: "pinch"; dist: number; view: View; wx: number; wy: number }
-  | { type: "drag"; id: string; lx: number; ly: number; sx: number; sy: number; moved: boolean };
+  | { type: "tack"; id: string; sx: number; sy: number; moved: boolean }
+  | { type: "drag"; id: string; lx: number; ly: number; sx: number; sy: number; moved: boolean; held?: boolean; grip?: boolean };
 
 interface Props {
   board: BoardData;
@@ -50,8 +57,16 @@ export default function Board({ board, update, boardStyle }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const pointers = useRef(new Map<number, Pt>());
   const gesture = useRef<Gesture | null>(null);
+  const lastBgTap = useRef(0);
   const lastTap = useRef<{ id: string; t: number } | null>(null);
+  const lastZoom = useRef(0);
+  const pressTimer = useRef<number | undefined>(undefined);
+  const goUpRef = useRef<() => void>(() => {});
+  const escRef = useRef<() => void>(() => {});
   const animTimer = useRef<number | undefined>(undefined);
+  const holdTimer = useRef<number | undefined>(undefined);
+  const cursorTimer = useRef<number | undefined>(undefined);
+  const holding = useRef(false);
 
   const [view, setView] = useState<View>(() =>
     board.view.scale > 0
@@ -63,16 +78,27 @@ export default function Board({ board, update, boardStyle }: Props) {
   const [animate, setAnimate] = useState(false);
   const [size, setSize] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const [selectedId, setSelectedIdState] = useState<string | null>(null);
-  // Kept after deselecting so the edit card can play its slide-back animation before it unmounts.
-  const [lastId, setLastId] = useState<string | null>(null);
+  // The settings card is separate from selection: selecting shows the resize grips, and the Settings button opens the card.
+  // cardId stays set while the card slides back, so it can finish its animation before it unmounts.
+  const [cardId, setCardId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Mouse cursor: the normal pointer unless the button is held (move / grabbing) or a double-click just zoomed (briefly zoom-in / zoom-out).
+  const [cursor, setCursor] = useState<"move" | "grabbing" | "zoom-in" | "zoom-out" | undefined>(undefined);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
   const [panel, setPanel] = useState<"search" | "types" | null>(null);
+  // The photo stack being looked through (item + which photo).
+  const [viewer, setViewer] = useState<{ id: string; index: number } | null>(null);
 
   const edit = (fn: (b: BoardData) => BoardData) => update(boardId, fn);
 
   function setSelectedId(id: string | null) {
+    if (id !== selectedId) setSettingsOpen(false);
     setSelectedIdState(id);
-    if (id) setLastId(id);
+  }
+
+  function openSettings(id: string) {
+    setCardId(id);
+    setSettingsOpen(true);
   }
 
   const depths = useMemo(() => computeDepths(board.items), [board.items]);
@@ -92,9 +118,39 @@ export default function Board({ board, update, boardStyle }: Props) {
     () => [...board.items].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0)),
     [board.items, depths],
   );
+  // What the camera is "in": the deepest visible item (not a pin) under the middle of the screen that fills at least
+  // half of the view. Drives the breadcrumb, the Up button and where new items are added.
+  const current = useMemo(() => {
+    const cx = (size.w / 2 - view.x) / view.scale;
+    const cy = (size.h / 2 - view.y) / view.scale;
+    let best: Item | null = null;
+    let bestDepth = -1;
+    for (const i of board.items) {
+      if (i.kind === "pin" || !visible.has(i.id)) continue;
+      if (cx < i.x || cx > i.x + i.w || cy < i.y || cy > i.y + i.h) continue;
+      if (i.w * view.scale < size.w * 0.5 && i.h * view.scale < size.h * 0.5) continue;
+      const d = depths.get(i.id) ?? 0;
+      if (d > bestDepth) {
+        best = i;
+        bestDepth = d;
+      }
+    }
+    return best;
+  }, [board.items, depths, visible, size, view]);
+  const crumbs = useMemo(() => {
+    const out: Item[] = [];
+    const seen = new Set<string>();
+    let cur: Item | null | undefined = current;
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      out.unshift(cur);
+      cur = cur.parentId ? itemsById.get(cur.parentId) : null;
+    }
+    return out;
+  }, [current, itemsById]);
   const selected = selectedId ? itemsById.get(selectedId) ?? null : null;
-  const popItem = selected ?? (lastId ? itemsById.get(lastId) ?? null : null);
-  const leaving = !selected;
+  const popItem = cardId ? itemsById.get(cardId) ?? null : null;
+  const leaving = !(settingsOpen && !!selected && selected.id === cardId);
   const showPopover = !!popItem && !animate && visible.has(popItem.id);
   const coverItems = useMemo(() => {
     if (!popItem) return [];
@@ -112,6 +168,11 @@ export default function Board({ board, update, boardStyle }: Props) {
     return () => window.clearTimeout(t);
   }, [view, board.view, boardId, update]);
 
+  // Sections set to auto-fit follow what is inside them (including while their contents are being changed).
+  useEffect(() => {
+    if (autoFitSections(board) !== board) update(boardId, autoFitSections);
+  }, [board, boardId, update]);
+
   // Track the board size in state so the popover can be placed during render.
   useEffect(() => {
     const el = containerRef.current;
@@ -126,6 +187,7 @@ export default function Board({ board, update, boardStyle }: Props) {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if ((e.target as HTMLElement).closest("[data-modal]")) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
       const px = e.clientX - r.left;
@@ -140,7 +202,15 @@ export default function Board({ board, update, boardStyle }: Props) {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /** Show a zoom cursor for half a second, then back to the pointer. */
+  function flashCursor(c: "zoom-in" | "zoom-out") {
+    window.clearTimeout(cursorTimer.current);
+    setCursor(c);
+    cursorTimer.current = window.setTimeout(() => setCursor(undefined), 500);
+  }
+
   function animateTo(next: View) {
+    lastZoom.current = performance.now();
     window.clearTimeout(animTimer.current);
     setAnimate(true);
     setView(next);
@@ -170,7 +240,11 @@ export default function Board({ board, update, boardStyle }: Props) {
   }
 
   function onPointerDown(e: React.PointerEvent) {
+    // Right and middle mouse buttons never start a gesture; right-click opens the editor (see onContextMenu).
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     window.clearTimeout(animTimer.current);
+    window.clearTimeout(pressTimer.current);
+    window.clearTimeout(cursorTimer.current);
     setAnimate(false);
     try {
       containerRef.current!.setPointerCapture(e.pointerId);
@@ -193,13 +267,26 @@ export default function Board({ board, update, boardStyle }: Props) {
       return;
     }
 
+    const tack = (e.target as HTMLElement).closest<HTMLElement>("[data-tack]");
+    if (tack?.dataset.tack && itemsById.has(tack.dataset.tack)) {
+      gesture.current = { type: "tack", id: tack.dataset.tack, sx: e.clientX, sy: e.clientY, moved: false };
+      return;
+    }
+
+    // The big Move handle drags its item (and what is inside it) from anywhere on the handle.
+    const mover = (e.target as HTMLElement).closest<HTMLElement>("[data-move]");
+    if (mover?.dataset.move && itemsById.has(mover.dataset.move)) {
+      gesture.current = { type: "drag", id: mover.dataset.move, lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, grip: true };
+      return;
+    }
+
     const grip = (e.target as HTMLElement).closest<HTMLElement>("[data-resize]");
     const gripItem = grip?.dataset.resizeId ? itemsById.get(grip.dataset.resizeId) : undefined;
     if (grip && gripItem) {
       gesture.current = {
         type: "resize",
         id: gripItem.id,
-        corner: grip.dataset.resize as Corner,
+        corner: grip.dataset.resize as Grip,
         sx: e.clientX,
         sy: e.clientY,
         orig: { x: gripItem.x, y: gripItem.y, w: gripItem.w, h: gripItem.h },
@@ -212,6 +299,28 @@ export default function Board({ board, update, boardStyle }: Props) {
       gesture.current = { type: "drag", id: hit.dataset.itemId, lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
     } else {
       gesture.current = { type: "pan", sx: e.clientX, sy: e.clientY, view, moved: false };
+    }
+
+    // Holding the mouse button down (not a quick click) swaps the pointer for the move cursor.
+    if (e.pointerType === "mouse") {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = window.setTimeout(() => {
+        const g = gesture.current;
+        if (!g || (g.type !== "pan" && g.type !== "drag")) return;
+        holding.current = true;
+        setCursor(g.type === "pan" ? "grabbing" : "move");
+      }, 180);
+    }
+
+    // Touch has no right button: press and hold selects instead.
+    if (e.pointerType !== "mouse") {
+      const at = local(e);
+      pressTimer.current = window.setTimeout(() => {
+        const g = gesture.current;
+        if (!g || pointers.current.size !== 1 || (g.type !== "pan" && g.type !== "drag") || g.moved) return;
+        g.held = true;
+        openEditorAt((at.x - view.x) / view.scale, (at.y - view.y) / view.scale);
+      }, 550);
     }
   }
 
@@ -247,7 +356,19 @@ export default function Board({ board, update, boardStyle }: Props) {
         h = Math.max(MIN_H, o.h - dy);
         y = o.y + o.h - h;
       }
-      edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === g.id ? { ...i, x, y, w, h } : i)) }));
+      edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === g.id ? { ...i, x, y, w, h, ...(i.autoFit ? { autoFit: undefined } : {}) } : i)) }));
+    } else if (g.type === "tack") {
+      if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) g.moved = true;
+      const it = itemsById.get(g.id);
+      if (g.moved && it) {
+        const r = containerRef.current!.getBoundingClientRect();
+        const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+        const pin = {
+          x: clamp01(((e.clientX - r.left - view.x) / view.scale - it.x) / it.w),
+          y: clamp01(((e.clientY - r.top - view.y) / view.scale - it.y) / it.h),
+        };
+        edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === g.id ? { ...i, pin } : i)) }));
+      }
     } else if (g.type === "drag") {
       if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 5) g.moved = true;
       if (g.moved) {
@@ -261,6 +382,12 @@ export default function Board({ board, update, boardStyle }: Props) {
   }
 
   function onPointerUp(e: React.PointerEvent) {
+    window.clearTimeout(pressTimer.current);
+    window.clearTimeout(holdTimer.current);
+    if (holding.current) {
+      holding.current = false;
+      setCursor(undefined);
+    }
     pointers.current.delete(e.pointerId);
     const g = gesture.current;
     if (pointers.current.size === 1 && g?.type === "pinch") {
@@ -274,6 +401,11 @@ export default function Board({ board, update, boardStyle }: Props) {
     gesture.current = null;
     if (!g) return;
 
+    if (g.type === "tack") {
+      if (!g.moved) handleTap(g.id, e.timeStamp);
+      return;
+    }
+    if (g.type === "pan" && g.held) return;
     if (g.type === "pan" && !g.moved) {
       // Tapped something that doesn't grab (e.g. the body of an open section): find it by position.
       const p = local(e);
@@ -283,14 +415,37 @@ export default function Board({ board, update, boardStyle }: Props) {
       } else {
         setSelectedId(null);
         setLinkFrom(null);
+        // Double-click on the bare board: out one level.
+        if (e.timeStamp - lastBgTap.current < 350) {
+          lastBgTap.current = 0;
+          if (current) flashCursor("zoom-out");
+          goUp();
+        } else {
+          lastBgTap.current = e.timeStamp;
+        }
       }
     } else if (g.type === "drag") {
       if (g.moved) {
         edit((b) => reparent(b, g.id));
-      } else {
+      } else if (!g.held && !g.grip) {
         handleTap(g.id, e.timeStamp);
       }
     }
+  }
+
+  /** Right-click or press-and-hold: open the edit card for the item under the pointer. */
+  function openEditorAt(wx: number, wy: number) {
+    const hit = worldHit(wx, wy);
+    setLinkFrom(null);
+    setSelectedId(hit ? hit.id : null);
+  }
+
+  function onContextMenu(e: React.MouseEvent) {
+    // Leave the browser menu alone over buttons, fields and the edit card.
+    if ((e.target as HTMLElement).closest("button, input, select, textarea, a, label, [data-popover]")) return;
+    e.preventDefault();
+    const r = containerRef.current!.getBoundingClientRect();
+    openEditorAt((e.clientX - r.left - view.x) / view.scale, (e.clientY - r.top - view.y) / view.scale);
   }
 
   /** Deepest visible item under a world point (smaller wins ties), regardless of what the DOM lets through. */
@@ -309,23 +464,74 @@ export default function Board({ board, update, boardStyle }: Props) {
     return best;
   }
 
-  function zoomToItem(item: Item) {
-    fitRect(item.kind === "section" ? item : { x: item.x - 60, y: item.y - 60, w: item.w + 120, h: item.h + 120 });
+  /** A note needs a different height for its text. Normally it only grows; an auto-fit note (exact) also shrinks. */
+  function fitNote(id: string, h: number, exact?: boolean) {
+    edit((b) => ({
+      ...b,
+      items: b.items.map((i) => (i.id === id && (exact ? Math.abs(i.h - h) > 0.5 : i.h < h) ? { ...i, h } : i)),
+    }));
   }
 
-  /** Select an item and bring it on screen, zooming in far enough that it is actually shown at its level. */
+  /** The camera that frames an item, zoomed in far enough that the item is actually shown at its level. */
+  function viewFor(item: Item): View {
+    const { w, h } = viewportSize();
+    // How much of the screen the item should fill: big things (top-level sections, maps) fill nearly all of it, small notes only
+    // about 35-40% so they don't balloon. Grows smoothly with the item's size in between.
+    const size = Math.max(item.w, item.h);
+    const fill = Math.min(0.92, Math.max(0.35, 0.35 + (0.57 * (size - 200)) / 700));
+    const need = thresholdFor(depths.get(item.id) ?? 0) + 0.05;
+    const scale = Math.max(need, clampScale(Math.min((w * fill) / item.w, (h * fill) / item.h)));
+    return { scale, x: w / 2 - (item.x + item.w / 2) * scale, y: h / 2 - (item.y + item.h / 2) * scale };
+  }
+
+  function zoomToItem(item: Item) {
+    animateTo(viewFor(item));
+  }
+
+  /** Select an item and bring it on screen. */
   function focusItem(item: Item) {
     setSelectedId(item.id);
     setLinkFrom(null);
-    const rect = item.kind === "section" ? item : { x: item.x - 60, y: item.y - 60, w: item.w + 120, h: item.h + 120 };
-    let next = fitView(rect, viewportSize());
-    const need = thresholdFor(depths.get(item.id) ?? 0) + 0.05;
-    if (next.scale < need) {
-      const { w, h } = viewportSize();
-      next = { scale: need, x: w / 2 - (item.x + item.w / 2) * need, y: h / 2 - (item.y + item.h / 2) * need };
-    }
-    animateTo(next);
+    zoomToItem(item);
   }
+
+  /** Out one level: from a note to the section it is in, from a section to the one around it, from a top-level section to everything. */
+  function goUp() {
+    if (!current) return;
+    const parent = current.parentId ? itemsById.get(current.parentId) : undefined;
+    if (parent) zoomToItem(parent);
+    else fitRect(boundsOf(board.items));
+  }
+
+  useEffect(() => {
+    goUpRef.current = goUp;
+    escRef.current = () => {
+      if (viewer) {
+        setViewer(null);
+        return;
+      }
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
+      if (selectedId || linkFrom) {
+        setSelectedId(null);
+        setLinkFrom(null);
+      } else goUp();
+    };
+  });
+
+  // Escape: close the edit card, else go up a level.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      escRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function handleTap(id: string, now: number) {
     if (linkFrom && linkFrom !== id) {
@@ -339,22 +545,34 @@ export default function Board({ board, update, boardStyle }: Props) {
       setSelectedId(id);
       return;
     }
+    // A double-click must not zoom twice: ignore the second click while the first zoom is still settling.
+    if (now - lastZoom.current < 450) return;
     const item = itemsById.get(id);
-    if (item && lastTap.current?.id === id && now - lastTap.current.t < 350) {
-      lastTap.current = null;
-      setSelectedId(id);
-      zoomToItem(item);
+    if (!item) return;
+    setSelectedId(null);
+    // Zooming in takes a double-click (or double-tap) on the same item; a single click does nothing.
+    if (lastTap.current?.id !== id || now - lastTap.current.t > 400) {
+      lastTap.current = { id, t: now };
       return;
     }
-    lastTap.current = { id, t: now };
-    setSelectedId(id);
+    lastTap.current = null;
+    // A pin zooms to the section it points at.
+    const targetId = item.kind === "pin" ? board.links.find((l) => l.from === item.id)?.to : undefined;
+    const target = (targetId ? itemsById.get(targetId) : undefined) ?? item;
+    if (target.id === current?.id) return;
+    flashCursor("zoom-in");
+    zoomToItem(target);
   }
 
   // ---- adding things ----
   function addItem(kind: ItemKind, opts: { imageData?: string; ratio?: number; parent?: Item | null; type?: ItemType } = {}) {
     const sel = selected;
     const parent =
-      opts.parent !== undefined ? opts.parent : sel ? (sel.kind === "section" ? sel : itemsById.get(sel.parentId ?? "") ?? null) : null;
+      opts.parent !== undefined
+        ? opts.parent
+        : sel
+          ? sel.kind === "section" ? sel : itemsById.get(sel.parentId ?? "") ?? null
+          : current ? (current.kind === "section" ? current : itemsById.get(current.parentId ?? "") ?? null) : null;
     const depth = parent ? (depths.get(parent.id) ?? 0) + 1 : 0;
     const size = defaultSize(kind, depth);
     if (kind === "image" && opts.ratio) size.h = Math.round(size.w * opts.ratio) + 34;
@@ -424,6 +642,23 @@ export default function Board({ board, update, boardStyle }: Props) {
     }
   }
 
+  /** Downscale and attach picked photos to a note or section. A file that can't be read is skipped and reported. */
+  async function onAddPhotos(item: Item, files: File[]) {
+    const urls: string[] = [];
+    let failed = 0;
+    for (const file of files) {
+      try {
+        urls.push((await fileToDataUrl(file, 1400)).dataUrl);
+      } catch {
+        failed++;
+      }
+    }
+    if (urls.length) {
+      edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === item.id ? { ...i, photos: [...(i.photos ?? []), ...urls] } : i)) }));
+    }
+    if (failed) alert(`Could not read ${failed} of those images.`);
+  }
+
   /** Pop the edit card out beside the item (right, else left), clamped on screen; inside it if the item fills the view. */
   function popoverPlacement(item: Item): PopoverPlacement {
     const { w: cw, h: ch } = size;
@@ -476,6 +711,8 @@ export default function Board({ board, update, boardStyle }: Props) {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={onContextMenu}
+      data-cursor={cursor}
     >
       <div
         className="absolute left-0 top-0 origin-top-left"
@@ -498,11 +735,16 @@ export default function Board({ board, update, boardStyle }: Props) {
               linkTarget={item.id === linkFrom}
               boardStyle={boardStyle}
               type={item.typeId ? typesById.get(item.typeId) : undefined}
+              onFit={fitNote}
+              onOpenPhotos={(id) => setViewer({ id, index: 0 })}
+              straight={view.scale >= STRAIGHT_SCALE}
             />
           );
         })}
         <Strings links={board.links} items={itemsById} visible={visible} whiteboard={wb} />
-        {selected && selected.kind !== "pin" && visible.has(selected.id) && <ResizeHandles item={selected} scale={view.scale} />}
+        {selected && visible.has(selected.id) && (
+          <ResizeHandles item={selected} scale={view.scale} onSettings={() => openSettings(selected.id)} />
+        )}
       </div>
 
       {/* floating controls */}
@@ -515,6 +757,8 @@ export default function Board({ board, update, boardStyle }: Props) {
         <button className={tool} onClick={() => setPanel(panel === "search" ? null : "search")} aria-expanded={panel === "search"}>🔍 Search</button>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
       </div>
+      <Breadcrumb crumbs={crumbs} onAll={() => fitRect(boundsOf(board.items))} onPick={(item) => zoomToItem(item)} />
+      <GestureHint />
       <div
         className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2"
         onPointerDown={(e) => e.stopPropagation()}
@@ -522,6 +766,7 @@ export default function Board({ board, update, boardStyle }: Props) {
         <div className="rounded-full bg-black/55 px-3 py-1 text-xs text-white">
           {Math.round(view.scale * 100)}% · level {depthShown + 1}
         </div>
+        <button className={`${tool} disabled:opacity-40`} onClick={goUp} disabled={!current} aria-label="Up one level" title="Up one level (Esc, or double-click the board)">↑ Up</button>
         <button className={tool} onClick={() => zoomBy(1.5)} aria-label="Zoom in">+</button>
         <button className={tool} onClick={() => zoomBy(1 / 1.5)} aria-label="Zoom out">−</button>
         <button className={tool} onClick={() => fitRect(boundsOf(board.items))}>Fit all</button>
@@ -568,7 +813,7 @@ export default function Board({ board, update, boardStyle }: Props) {
       )}
 
       {showPopover && popItem && (
-        <div onPointerDown={(e) => e.stopPropagation()}>
+        <div data-popover onPointerDown={(e) => e.stopPropagation()}>
           <ItemPopover
             key={popItem.id}
             item={popItem}
@@ -591,6 +836,8 @@ export default function Board({ board, update, boardStyle }: Props) {
               })
             }
             onPickMap={(file) => void onPickMap(popItem, file)}
+            onAddPhotos={(files) => void onAddPhotos(popItem, files)}
+            onViewPhotos={() => setViewer({ id: popItem.id, index: 0 })}
             onPatch={(patch) =>
               edit((b) => ({ ...b, updatedAt: Date.now(), items: b.items.map((i) => (i.id === popItem.id ? { ...i, ...patch } : i)) }))
             }
@@ -600,17 +847,17 @@ export default function Board({ board, update, boardStyle }: Props) {
               if (n - after > 1 && !confirm(`Delete this and ${n - after - 1} item(s) inside it?`)) return;
               edit((b) => removeItem(b, popItem.id));
               setSelectedId(null);
-              setLastId(null);
+              setCardId(null);
             }}
             onZoomTo={() => zoomToItem(popItem)}
             onToggleLink={() => setLinkFrom(linkFrom === popItem.id ? null : popItem.id)}
             onRemoveLink={(id) => edit((b) => ({ ...b, updatedAt: Date.now(), links: b.links.filter((l) => l.id !== id) }))}
             onAddInside={(kind) => addItem(kind, { parent: popItem })}
             onClose={() => {
-              setSelectedId(null);
+              setSettingsOpen(false);
               setLinkFrom(null);
             }}
-            onLeft={() => setLastId(null)}
+            onLeft={() => setCardId(null)}
           />
         </div>
       )}
@@ -637,6 +884,7 @@ export default function Board({ board, update, boardStyle }: Props) {
                 boardStyle={boardStyle}
                 type={item.typeId ? typesById.get(item.typeId) : undefined}
                 cover={leaving ? "solid" : "enter"}
+                straight={view.scale >= STRAIGHT_SCALE}
               />
             );
           })}
@@ -649,6 +897,16 @@ export default function Board({ board, update, boardStyle }: Props) {
           />
           {!leaving && popItem && popItem.kind !== "pin" && <ResizeHandles item={popItem} scale={view.scale} />}
         </div>
+      )}
+
+      {viewer && (itemsById.get(viewer.id)?.photos?.length ?? 0) > 0 && (
+        <PhotoViewer
+          title={itemsById.get(viewer.id)?.title ?? ""}
+          photos={itemsById.get(viewer.id)?.photos ?? []}
+          index={viewer.index}
+          onIndex={(index) => setViewer({ id: viewer.id, index })}
+          onClose={() => setViewer(null)}
+        />
       )}
     </div>
   );

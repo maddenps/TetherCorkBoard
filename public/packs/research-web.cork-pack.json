@@ -1,0 +1,42 @@
+{
+  "format": "tethercorkpack",
+  "version": 1,
+  "name": "Research web",
+  "description": "Topic, Claim, Question and Source types for mapping out a subject and how its pieces connect.",
+  "types": [
+    {
+      "id": "type-topic",
+      "name": "Topic",
+      "kind": "section",
+      "color": "#c6e2ff",
+      "fields": [{ "id": "topic-summary", "name": "Summary", "type": "longtext" }]
+    },
+    {
+      "id": "type-claim",
+      "name": "Claim",
+      "kind": "note",
+      "color": "#fff4a3",
+      "fields": [
+        { "id": "claim-confidence", "name": "Confidence", "type": "select", "options": ["Low", "Medium", "High"] },
+        { "id": "claim-source", "name": "Source", "type": "link" }
+      ]
+    },
+    {
+      "id": "type-question",
+      "name": "Question",
+      "kind": "note",
+      "color": "#ffd0dc",
+      "fields": [{ "id": "question-status", "name": "Status", "type": "select", "options": ["Open", "Researching", "Answered"] }]
+    },
+    {
+      "id": "type-source",
+      "name": "Source",
+      "kind": "note",
+      "color": "#ffffff",
+      "fields": [
+        { "id": "source-publisher", "name": "Publisher", "type": "text" },
+        { "id": "source-link", "name": "Link", "type": "link" }
+      ]
+    }
+  ]
+}

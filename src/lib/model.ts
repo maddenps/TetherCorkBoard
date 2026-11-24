@@ -20,50 +20,34 @@ export const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "select", label: "Choice" },
 ];
 
-/** Starter types. They are ordinary types: rename them, change their fields or delete them. */
+/**
+ * Starter types. They are ordinary types: rename them, change their fields or delete them. They are deliberately
+ * general; packs (see packs.ts) add types for a specific purpose, such as planning a climbing trip.
+ */
 export function defaultTypes(): ItemType[] {
-  const [yellow, pink, green, blue, purple] = PAPER_COLORS;
+  const [yellow, , green, blue] = PAPER_COLORS;
   const f = (id: string, name: string, type: FieldType, options?: string[]): FieldDef => ({ id, name, type, ...(options ? { options } : {}) });
   return [
     {
-      id: "type-area",
-      name: "Area",
+      id: "type-place",
+      name: "Place",
       kind: "section",
       color: green,
-      fields: [f("area-access", "Access", "longtext"), f("area-map", "Map link", "link")],
+      fields: [f("place-address", "Address", "text"), f("place-link", "Link", "link")],
     },
     {
-      id: "type-location",
-      name: "Location",
-      kind: "section",
-      color: pink,
-      fields: [f("loc-parking", "Parking", "longtext"), f("loc-directions", "Directions", "longtext"), f("loc-link", "Link", "link")],
-    },
-    {
-      id: "type-stay",
-      name: "Stay",
-      kind: "section",
-      color: purple,
-      fields: [f("stay-address", "Address", "text"), f("stay-times", "Check-in / out", "text"), f("stay-link", "Booking link", "link")],
-    },
-    {
-      id: "type-boulder",
-      name: "Boulder",
+      id: "type-group",
+      name: "Group",
       kind: "section",
       color: blue,
-      fields: [f("boulder-approach", "Approach", "longtext"), f("boulder-landing", "Landing", "text")],
+      fields: [f("group-notes", "Notes", "longtext")],
     },
     {
-      id: "type-route",
-      name: "Route",
+      id: "type-task",
+      name: "Task",
       kind: "note",
       color: yellow,
-      fields: [
-        f("route-grade", "Grade", "text"),
-        f("route-status", "Status", "select", ["To try", "Project", "Sent"]),
-        f("route-video", "Video", "link"),
-        f("route-beta", "Beta", "longtext"),
-      ],
+      fields: [f("task-status", "Status", "select", ["To do", "Doing", "Done"]), f("task-due", "Due", "text"), f("task-link", "Link", "link")],
     },
   ];
 }
@@ -83,7 +67,7 @@ function normalizeField(raw: unknown): FieldDef | null {
   return { id: raw.id, name: str(raw.name, "Field"), type, ...(type === "select" ? { options: options ?? [] } : {}) };
 }
 
-function normalizeType(raw: unknown): ItemType | null {
+export function normalizeType(raw: unknown): ItemType | null {
   if (!isObj(raw) || typeof raw.id !== "string") return null;
   const fields = Array.isArray(raw.fields) ? raw.fields.map(normalizeField).filter((x): x is FieldDef => !!x) : [];
   return {
@@ -118,7 +102,14 @@ function normalizeItem(raw: unknown): Item | null {
     ...(Object.keys(fields).length ? { fields } : {}),
     ...(typeof raw.url === "string" && raw.url ? { url: raw.url } : {}),
     ...(typeof raw.mapData === "string" ? { mapData: raw.mapData } : {}),
+    ...(raw.autoFit === true ? { autoFit: true } : {}),
+    ...(Array.isArray(raw.photos) && raw.photos.some((p) => typeof p === "string" && p.startsWith("data:image/"))
+      ? { photos: raw.photos.filter((p): p is string => typeof p === "string" && p.startsWith("data:image/")) }
+      : {}),
     ...(typeof raw.icon === "string" ? { icon: raw.icon } : {}),
+    ...(isObj(raw.pin) && Number.isFinite(raw.pin.x) && Number.isFinite(raw.pin.y)
+      ? { pin: { x: Math.min(1, Math.max(0, raw.pin.x as number)), y: Math.min(1, Math.max(0, raw.pin.y as number)) } }
+      : {}),
   };
 }
 

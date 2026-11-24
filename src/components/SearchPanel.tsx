@@ -29,7 +29,7 @@ export default function SearchPanel({ board, onPick, onClose }: Props) {
             if (e.key === "Escape") onClose();
             if (e.key === "Enter" && hits[0]) onPick(hits[0].item);
           }}
-          placeholder="Search routes, boulders, notes…"
+          placeholder="Search notes, sections, photos…"
           className="min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-2.5 py-2 text-base text-stone-900 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-zinc-500 dark:bg-zinc-600 dark:text-white"
           aria-label="Search the board"
         />

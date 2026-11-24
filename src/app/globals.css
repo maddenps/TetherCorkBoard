@@ -280,4 +280,10 @@ body {
   }
 }
 
+/* The board's mouse cursor: the normal pointer, except while holding the button down or just after a double-click. */
+[data-cursor="move"] { cursor: move; }
+[data-cursor="grabbing"] { cursor: grabbing; }
+[data-cursor="zoom-in"] { cursor: zoom-in; }
+[data-cursor="zoom-out"] { cursor: zoom-out; }
+
 .cover-fill-enter { animation: cover-fill 1000ms linear forwards; }

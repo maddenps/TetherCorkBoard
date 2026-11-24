@@ -2,9 +2,10 @@ import type { Board, Item, ItemKind, View } from "./types";
 
 /**
  * Semantic zoom: an item at hierarchy depth d is only shown once the board
- * scale reaches THRESHOLDS[d]. Depth 0 (top-level areas) is always visible.
+ * scale reaches THRESHOLDS[d]. Depth 0 (top-level sections) and depth 1 (what they hold, pins) are always visible,
+ * so the second layer can be seen even when the whole board is on screen.
  */
-export const THRESHOLDS = [0, 0.45, 0.9, 1.6, 2.6];
+export const THRESHOLDS = [0, 0, 0.3, 0.9, 1.6];
 export const MIN_SCALE = 0.08;
 export const MAX_SCALE = 4;
 
@@ -59,7 +60,7 @@ export function defaultSize(kind: ItemKind, depth: number): { w: number; h: numb
   }
   if (kind === "image") return { w: 240, h: 200 };
   if (kind === "pin") return { w: 130, h: 84 };
-  return { w: 180, h: 100 };
+  return { w: 240, h: 150 };
 }
 
 export function boundsOf(items: Item[]): { x: number; y: number; w: number; h: number } {
@@ -72,6 +73,40 @@ export function boundsOf(items: Item[]): { x: number; y: number; w: number; h: n
     y2 = Math.max(y2, i.y + i.h);
   }
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+const FIT_PAD = 32;
+
+/**
+ * The size an auto-fit section needs to hold what is inside it, with spare room on the right and bottom (too big is
+ * better than too small). Null when there is nothing inside. A section with a map image only ever grows, so the map is never cropped.
+ */
+export function fitSectionSize(items: Item[], id: string): { w: number; h: number } | null {
+  const sec = items.find((i) => i.id === id);
+  const kids = items.filter((i) => i.parentId === id);
+  if (!sec || kids.length === 0) return null;
+  const right = Math.max(...kids.map((k) => k.x + k.w));
+  const bottom = Math.max(...kids.map((k) => k.y + k.h));
+  let w = Math.max(200, Math.ceil(right - sec.x + FIT_PAD));
+  let h = Math.max(140, Math.ceil(bottom - sec.y + FIT_PAD));
+  if (sec.mapData) {
+    w = Math.max(w, sec.w);
+    h = Math.max(h, sec.h);
+  }
+  return { w, h };
+}
+
+/** Resize every auto-fit section to its contents. Returns the same board when nothing needs to change. */
+export function autoFitSections(board: Board): Board {
+  let changed = false;
+  const items = board.items.map((s) => {
+    if (s.kind !== "section" || !s.autoFit) return s;
+    const f = fitSectionSize(board.items, s.id);
+    if (!f || (Math.abs(f.w - s.w) <= 0.5 && Math.abs(f.h - s.h) <= 0.5)) return s;
+    changed = true;
+    return { ...s, ...f };
+  });
+  return changed ? { ...board, updatedAt: Date.now(), items } : board;
 }
 
 export function clampScale(s: number): number {
@@ -143,6 +178,7 @@ export function removeItem(board: Board, id: string): Board {
 export function pinPoint(i: Item): { x: number; y: number } {
   // A map pin joins up at the middle of its head.
   if (i.kind === "pin") return { x: i.x + i.w / 2, y: i.y + 20 };
+  if (i.pin) return { x: i.x + i.pin.x * i.w, y: i.y + i.pin.y * i.h };
   return { x: i.x + i.w / 2, y: i.y + 14 };
 }
 

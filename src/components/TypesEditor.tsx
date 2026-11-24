@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PAPER_COLORS } from "@/lib/board";
 import { FIELD_TYPES, defaultTypes, newField, newType } from "@/lib/model";
+import { BUILT_IN_PACKS, makePack, mergePack, parsePack, type Pack } from "@/lib/packs";
 import type { FieldDef, FieldType, ItemType } from "@/lib/types";
 
 interface Props {
@@ -23,6 +24,44 @@ const smallBtn =
 export default function TypesEditor({ types, onChange, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(types[0]?.id ?? null);
   const current = types.find((t) => t.id === selectedId) ?? null;
+  const packFile = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState("");
+
+  /** Add a pack's types to this board; types the board already has are left alone. */
+  function addPack(pack: Pack) {
+    const { types: next, added, skipped } = mergePack(types, pack);
+    onChange(next);
+    if (added > 0) setSelectedId(next[types.length]?.id ?? selectedId);
+    setMessage(
+      added === 0
+        ? `"${pack.name}": this board already has all of its types.`
+        : `Added ${added} type${added === 1 ? "" : "s"} from "${pack.name}"${skipped ? ` (${skipped} already here)` : ""}.`,
+    );
+  }
+
+  async function loadPackFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const pack = parsePack(JSON.parse(await file.text()));
+      if (!pack) throw new Error("not a pack");
+      addPack(pack);
+    } catch {
+      setMessage("That file is not a Tether type pack.");
+    }
+  }
+
+  function savePackFile() {
+    const name = prompt("Name for this pack?", "My types");
+    if (!name) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(makePack(name, types), null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name.replace(/[^\w-]+/g, "_") || "types"}.cork-pack.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const patchType = (patch: Partial<ItemType>) => onChange(types.map((t) => (t.id === selectedId ? { ...t, ...patch } : t)));
   const patchField = (id: string, patch: Partial<FieldDef>) =>
@@ -79,6 +118,27 @@ export default function TypesEditor({ types, onChange, onClose }: Props) {
             <button className={smallBtn} onClick={() => onChange(defaultTypes())}>
               Restore starter types
             </button>
+          )}
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-zinc-300">Packs</span>
+          {BUILT_IN_PACKS.map((p) => (
+            <button key={p.name} className={smallBtn} onClick={() => addPack(p)} title={p.description}>
+              + {p.name}
+            </button>
+          ))}
+          <button className={smallBtn} onClick={() => packFile.current?.click()}>
+            Load pack file…
+          </button>
+          <button className={smallBtn} onClick={savePackFile} disabled={types.length === 0}>
+            Save these types as a pack
+          </button>
+          <input ref={packFile} type="file" accept=".json,application/json" className="hidden" onChange={loadPackFile} />
+          {message && (
+            <div className="w-full text-xs text-stone-600 dark:text-zinc-300" role="status">
+              {message}
+            </div>
           )}
         </div>
 

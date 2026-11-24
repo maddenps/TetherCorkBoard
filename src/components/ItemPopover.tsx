@@ -48,6 +48,8 @@ interface Props {
   onPatchLink: (id: string, patch: Partial<Link>) => void;
   onSetPinTarget: (targetId: string | null) => void;
   onPickMap: (file: File) => void;
+  onAddPhotos: (files: File[]) => void;
+  onViewPhotos: () => void;
   onAddInside: (kind: ItemKind) => void;
   onClose: () => void;
   /** Called when the slide-back animation has finished. */
@@ -68,6 +70,8 @@ export default function ItemPopover(p: Props) {
   const isPin = item.kind === "pin";
   const marker = markerColor(item.color);
   const mapRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+  const photos = item.photos ?? [];
   const mine = p.links.filter((l) => l.from === item.id || l.to === item.id);
   const pinTarget = isPin ? p.links.find((l) => l.from === item.id)?.to ?? "" : "";
   const side = placement.side;
@@ -99,7 +103,7 @@ export default function ItemPopover(p: Props) {
       >
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wide text-stone-600">{item.kind}</span>
-          <button className={btn} onClick={p.onClose} aria-label="Close">
+          <button className={btn} onClick={p.onClose} aria-label="Close settings">
             Done
           </button>
         </div>
@@ -162,6 +166,69 @@ export default function ItemPopover(p: Props) {
 
         <ItemFields item={item} types={p.types} onPatch={p.onPatch} />
 
+        {(item.kind === "note" || item.kind === "section") && (
+          <label className="mb-3 flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={!!item.autoFit}
+              onChange={(e) => p.onPatch({ autoFit: e.target.checked ? true : undefined })}
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            <span>
+              Auto-fit size to its content
+              <span className="block text-xs text-stone-600">
+                {item.kind === "note" ? "Height follows the text" : "Grows and shrinks around what is inside"}, with a little spare room.
+                Resizing by hand turns this off.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {(item.kind === "note" || item.kind === "section") && (
+          <div className="mb-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-stone-600">Photos</span>
+              <button className={btn} onClick={() => photoRef.current?.click()}>
+                Add photos…
+              </button>
+              {photos.length > 0 && (
+                <button className={btn} onClick={p.onViewPhotos}>
+                  View ({photos.length})
+                </button>
+              )}
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = "";
+                  if (files.length) p.onAddPhotos(files);
+                }}
+              />
+            </div>
+            {photos.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {photos.map((src, n) => (
+                  <div key={n} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={src} alt="" draggable={false} className="h-14 w-14 rounded-sm object-cover" />
+                    <button
+                      aria-label="Remove photo"
+                      className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full bg-red-600 text-xs font-bold leading-5 text-white"
+                      onClick={() => p.onPatch({ photos: photos.filter((_, j) => j !== n) })}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {item.kind === "section" && (
           <div className="mb-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
@@ -196,6 +263,11 @@ export default function ItemPopover(p: Props) {
           <button className={`${btn} ${p.linking ? "border-red-600 bg-red-200" : ""}`} onClick={p.onToggleLink}>
             {p.linking ? "Tap another item…" : "Connect"}
           </button>
+          {item.pin && !isPin && (
+            <button className={btn} onClick={() => p.onPatch({ pin: undefined })} title="Drag the red pin to move it; this puts it back at the top centre">
+              Reset pin
+            </button>
+          )}
           <button className={`${btn} text-red-700`} onClick={p.onDelete}>
             Delete
           </button>

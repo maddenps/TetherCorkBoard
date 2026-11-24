@@ -16,7 +16,7 @@ A spatial planner. Instead of a linear outline, a project is laid out on a 2D co
 - **Items**: sections (containers), notes and photos, pinned anywhere on the board
 - **Strings**: red string tied between two items (pin to pin)
 - **Semantic zoom**: items belong to a parent section. Deeper levels only appear once you zoom in far enough, so a
-  bouldering trip reads as areas, then boulders, then routes
+  trip can read as places, then groups, then notes (what each level means is set by item types and packs)
 - **Offline**: no server, no account. Boards are stored in the browser and the app shell is cached by a service
   worker, so it works with no cell signal after one visit online (or after installing it to the home screen)
 - **Backup**: export a board to a `.cork.json` file and import it elsewhere
@@ -36,8 +36,11 @@ src/
     Board.tsx           camera (pan, zoom), gestures, add items, selection, string mode
     ItemCard.tsx        one item on the board (section, note, photo)
     ItemPopover.tsx     edit card that pops out beside the selected item and follows it
-    ResizeHandles.tsx   four corner grips on the selected item
+    ResizeHandles.tsx   grips on the selected item: four corners, four edges, a Move handle and a Settings button
     Strings.tsx         SVG layer drawing the strings
+    Breadcrumb.tsx      path along the top (All > section > section); tap a step to zoom out to it
+    PhotoViewer.tsx     modal stack of an item's photos (arrows, thumbnails, Esc closes)
+    GestureHint.tsx     dismissible reminder of click / right-click / Esc (dismissal kept in localStorage)
     ServiceWorkerRegister.tsx
   lib/
     types.ts            Board, Item, Link, View, BoardExport
@@ -45,6 +48,7 @@ src/
     storage.ts          IndexedDB load / save / delete
     useBoards.ts        all boards in memory, debounced autosave, current board id
     seed.ts             demo board and empty board factories
+    packs.ts            type packs: parsePack (validates untrusted JSON), mergePack (adds types, never overwrites), makePack, built-in packs
     image.ts            downscale picked photos to JPEG data URLs
     whiteboard.ts       generated whiteboard texture (smears, ghost lines, dust)
     marker.ts           pure wobbly marker-outline path generator
@@ -59,6 +63,8 @@ public/
   sw.js                 offline cache (bump VERSION on shell changes)
   manifest.webmanifest  installable app manifest
   icon.svg
+  examples/             ready-made boards to import (research-web.cork.json: a linked web of ideas, with the Research web types embedded)
+  packs/                shareable type packs (*.cork-pack.json), e.g. climbing.cork-pack.json; format {format:"tethercorkpack", version:1, name, description?, types[]}
 Specs/                  this documentation
 ```
 
@@ -81,11 +87,13 @@ URLs). Exports wrap a board in `{ format: "tethercorkboard", version: 1, board }
 ## 4. Semantic zoom
 
 `THRESHOLDS` in `lib/board.ts`: an item at depth `d` is visible when `view.scale >= THRESHOLDS[d]`
-(0, 0.45, 0.9, 1.6, 2.6). Hidden items fade out and stop receiving pointer events. Strings are drawn only when
+(0, 0, 0.3, 0.9, 1.6): the first two levels, areas and the things inside them, are always shown. Hidden items fade out and stop receiving pointer events. Strings are drawn only when
 both ends are visible. A section whose children are hidden shows a large title and "N inside, zoom in"; once
 children are visible it shrinks to a header and its body lets pans pass through.
 
-Double-tap an item, or "Zoom to" in the panel, animates the camera to fit it.
+Notes grow in height until all of their text and field lines fit (`ItemCard` measures its content and calls `Board.fitNote`; they never shrink on their own, and you can still resize bigger).
+
+Double-click an item (or "Zoom to" in the panel) animates the camera to it. How much of the screen it fills depends on its size (`viewFor` in `Board`): about 35-40% for small notes, rising to about 92% for big sections and maps. Cards are drawn untilted at `STRAIGHT_SCALE` (0.3, where route notes appear) and above, because a tilted card is resampled by the compositor and its text goes soft. `Board` works out what the camera is "in" (the deepest visible item under the middle of the screen that fills half the view); that drives the breadcrumb, the Up button and where `+ Note` etc. add new items.
 
 ## 5. Gestures (`Board.tsx`)
 
@@ -95,9 +103,17 @@ Double-tap an item, or "Zoom to" in the panel, animates the camera to fit it.
 | Wheel / trackpad scroll | Zoom around the cursor |
 | Two-finger pinch | Zoom and pan |
 | Drag an item (or a section header) | Move it and everything inside it; on drop it joins the smallest section under its centre |
-| Tap an item (any part, including the body of an open section) | Select, pops the edit card out beside it |
-| Double-tap / double-click an item | Select it and zoom to it (hit-tested by position, so it works at any zoom) |
-| Drag a corner grip on the selected item | Resize (min 90x60) |
+| Double-click / double-tap an item (any part, including the body of an open section) | Zoom in to it; a single click does nothing (a pin zooms to the section it points at). Hit-tested by position, so it works at any zoom |
+| Click the 🔗 icon on a card | Opens the item's link in a new tab (real `<a>`, `noopener`; only http(s) via `safeUrl`) |
+| Click the 🖼️ icon on a card | Opens the photo stack for that note or section (`Item.photos`, added from "Add photos…" in the edit card) |
+| Drag the red pin (thumbtack) on an item | Moves where the pin and any string tied to the item sit (`Item.pin`, fractions of the item's size; "Reset pin" in the edit card). A click on the pin without moving counts as a click on the item |
+| Right-click, or press and hold (touch) | Select the item under the pointer: shows resize grips, a Move handle and a Settings button (the edit card does not open by itself) |
+| Press the Settings button on the selected item | Pop the edit card out beside it; Done or Esc closes the card, Esc again deselects |
+| Drag the Move handle on the selected item | Move it (and what is inside it) without needing to grab a particular part of it |
+| Esc, the Up button, or double-click on the bare board | Out one level (edit card closes first if open) |
+| Breadcrumb step | Zoom out to that step; All fits the whole board |
+| Drag a corner grip (both ways) or an edge grip (one way) on the selected item | Resize (min 90x60). Edge grips only show when that edge is at least 120px long on screen. Resizing by hand turns `autoFit` off |
+| Tick "Auto-fit size to its content" in the edit card | `Item.autoFit`: a note's height follows its text (grows and shrinks, +14px spare); a section grows and shrinks around its children (+32px spare right and bottom; sections with a map image only grow). Pure helpers `fitSectionSize` / `autoFitSections` in `lib/board.ts` |
 | "Tie string" then tap another item | Creates a string |
 
 ## 6. Offline

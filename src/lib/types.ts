@@ -26,6 +26,12 @@ export interface Item {
   url?: string;
   /** Sections: a map (or any picture) drawn behind the section's contents. Downscaled JPEG data URL. */
   mapData?: string;
+  /** Where the thumbtack (and the end of any string) sits on the item, as fractions 0..1 of its width and height. Missing = top centre. */
+  pin?: { x: number; y: number };
+  /** Keep the size matched to the content (notes: height; sections: the items inside), always leaving a little spare room. */
+  autoFit?: boolean;
+  /** Photos tied to a note or section (downscaled JPEG data URLs), looked through from the picture-frame icon on the card. */
+  photos?: string[];
   /** Pins: the emoji shown in the pin's head. */
   icon?: string;
 }
