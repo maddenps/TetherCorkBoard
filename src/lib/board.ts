@@ -1,9 +1,10 @@
 import type { Board, Item, ItemKind, View } from "./types";
 
 /**
- * Semantic zoom: an item at hierarchy depth d is only shown once the board
- * scale reaches THRESHOLDS[d]. Depth 0 (top-level sections) and depth 1 (what they hold, pins) are always visible,
- * so the second layer can be seen even when the whole board is on screen.
+ * Semantic zoom: a SECTION at hierarchy depth d is only shown once the board scale reaches THRESHOLDS[d]. Depth 0
+ * (top-level sections) and depth 1 are always visible, so the second layer can be seen even when the whole board is on
+ * screen. Anything that is not a section (notes, photos, pins) is shown whenever the section it is in is shown (see
+ * computeVisible), so a note never hides inside a visible section.
  */
 export const THRESHOLDS = [0, 0, 0.3, 0.9, 1.6];
 export const MIN_SCALE = 0.08;
@@ -18,6 +19,27 @@ export function uid(): string {
 
 export function thresholdFor(depth: number): number {
   return THRESHOLDS[Math.min(depth, THRESHOLDS.length - 1)];
+}
+
+/**
+ * Which items are shown at a zoom. Sections follow THRESHOLDS by depth; a note, photo or pin is shown as soon as the
+ * section it is in is shown (or its own depth threshold is reached, for one that sits at the top level). `ordered` must
+ * list parents before the things inside them (sort by depth).
+ */
+export function computeVisible(ordered: Item[], depths: Map<string, number>, scale: number): Set<string> {
+  const shown = new Set<string>();
+  for (const i of ordered) {
+    const byZoom = scale >= thresholdFor(depths.get(i.id) ?? 0);
+    if (i.kind === "section" ? byZoom : byZoom || (!!i.parentId && shown.has(i.parentId))) shown.add(i.id);
+  }
+  return shown;
+}
+
+/** Ids of the sections that directly hold at least one note, photo or pin: they always show what is inside them. */
+export function sectionsHoldingThings(items: Item[]): Set<string> {
+  const ids = new Set<string>();
+  for (const i of items) if (i.parentId && i.kind !== "section") ids.add(i.parentId);
+  return ids;
 }
 
 export function computeDepths(items: Item[]): Map<string, number> {

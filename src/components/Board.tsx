@@ -7,6 +7,8 @@ import {
   boundsOf,
   clampScale,
   computeDepths,
+  computeVisible,
+  sectionsHoldingThings,
   descendantIds,
   defaultSize,
   fitView,
@@ -147,20 +149,19 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
   const depths = useMemo(() => computeDepths(board.items), [board.items]);
   const itemsById = useMemo(() => new Map(board.items.map((i) => [i.id, i])), [board.items]);
   const typesById = useMemo(() => new Map(board.types.map((t) => [t.id, t])), [board.types]);
-  const visible = useMemo(() => {
-    const s = new Set<string>();
-    for (const i of board.items) if (view.scale >= thresholdFor(depths.get(i.id) ?? 0)) s.add(i.id);
-    return s;
-  }, [board.items, depths, view.scale]);
+  const sorted = useMemo(
+    () => [...board.items].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0)),
+    [board.items, depths],
+  );
+  // Sections show by zoom level; notes, photos and pins show whenever the section they are in shows.
+  const visible = useMemo(() => computeVisible(sorted, depths, view.scale), [sorted, depths, view.scale]);
+  // A section that holds a note is always open: its notes are on show, so it never turns into a "zoom in" label.
+  const holdsThings = useMemo(() => sectionsHoldingThings(board.items), [board.items]);
   const childCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of board.items) if (i.parentId) m.set(i.parentId, (m.get(i.parentId) ?? 0) + 1);
     return m;
   }, [board.items]);
-  const sorted = useMemo(
-    () => [...board.items].sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0)),
-    [board.items, depths],
-  );
   // Cards far from the screen are not rendered at all (a margin of about a screen on every side, so a fast pan never shows a
   // gap). The selected item and the one whose card is open always render. Works from the committed view (see moveCamera).
   const rendered = useMemo(() => {
@@ -658,7 +659,9 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
     // about 35-40% so they don't balloon. Grows smoothly with the item's size in between.
     const size = Math.max(item.w, item.h);
     const fill = Math.min(0.92, Math.max(0.35, 0.35 + (0.57 * (size - 200)) / 700));
-    const need = thresholdFor(depths.get(item.id) ?? 0) + 0.05;
+    // the zoom at which the item itself shows (a note only needs the section it is in to show)
+    const showDepth = Math.max(0, (depths.get(item.id) ?? 0) - (item.kind === "section" ? 0 : 1));
+    const need = thresholdFor(showDepth) + 0.05;
     let scale = Math.max(need, clampScale(Math.min((w * fill) / item.w, (h * fill) / item.h)));
     // A double-click zooms in by at most 50 percentage points of zoom, however small the item, so the view never lurches
     // (25% can reach 75%, 45% can reach 95%, 100% can reach 150%, never 45% to 170%): double-click again to go further.
@@ -801,7 +804,7 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
     edit((b) => ({ ...b, updatedAt: Date.now(), items: [...b.items, item] }));
     setSelectedId(item.id);
     // Make sure the new thing is actually visible at this zoom.
-    if (view.scale < thresholdFor(depth)) fitRect(parent ?? item);
+    if (kind === "section" && view.scale < thresholdFor(depth)) fitRect(parent ?? item);
   }
 
   async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -871,7 +874,7 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
   const corkScale = 0.45 + Math.min(Math.max(view.scale, 0.2), 2) * 0.5;
   const grain = CORK_TILE_SIZE * corkScale;
   grainRef.current = grain;
-  const depthShown =[...visible].reduce((m, id) => Math.max(m, depths.get(id) ?? 0), 0);
+  const depthShown = [...visible].reduce((m, id) => (itemsById.get(id)?.kind === "section" ? Math.max(m, depths.get(id) ?? 0) : m), 0);
   const addParentName = defaultParent()?.title || null;
 
   return (
@@ -928,7 +931,7 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
               item={item}
               depth={depth}
               visible={visible.has(item.id)}
-              childrenVisible={view.scale >= thresholdFor(depth + 1)}
+              childrenVisible={view.scale >= thresholdFor(depth + 1) || holdsThings.has(item.id)}
               childCount={childCounts.get(item.id) ?? 0}
               selected={item.id === selectedId}
               linkTarget={item.id === linkFrom}
@@ -1061,7 +1064,7 @@ export default function Board({ board, update, boardStyle, onOpenMenu, onOpenTyp
                 item={item}
                 depth={depth}
                 visible={visible.has(item.id)}
-                childrenVisible={view.scale >= thresholdFor(depth + 1)}
+                childrenVisible={view.scale >= thresholdFor(depth + 1) || holdsThings.has(item.id)}
                 childCount={childCounts.get(item.id) ?? 0}
                 selected={!leaving && item.id === popItem?.id}
                 linkTarget={false}

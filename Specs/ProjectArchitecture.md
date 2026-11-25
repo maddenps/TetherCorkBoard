@@ -93,14 +93,14 @@ URLs). Exports wrap a board in `{ format: "tethercorkboard", version: 1, board }
 
 ## 4. Semantic zoom
 
-`THRESHOLDS` in `lib/board.ts`: an item at depth `d` is visible when `view.scale >= THRESHOLDS[d]`
+`THRESHOLDS` in `lib/board.ts`: a SECTION at depth `d` is visible when `view.scale >= THRESHOLDS[d]`; a note, photo or pin is visible whenever the section it is in is visible (`computeVisible` in `lib/board.ts`), and a section that holds one is always open instead of showing its "zoom in" label (`sectionsHoldingThings`)
 (0, 0, 0.3, 0.9, 1.6): the first two levels, areas and the things inside them, are always shown. Hidden items fade out and stop receiving pointer events. Strings are drawn only when
 both ends are visible. A section whose children are hidden shows a large title and "N inside, zoom in"; once
 children are visible it shrinks to a header and its body lets pans pass through.
 
 Notes grow in height until all of their text and field lines fit (`ItemCard` measures its content and calls `Board.fitNote`; they never shrink on their own, and you can still resize bigger).
 
-Double-click an item (or "Zoom to" in the panel) animates the camera to it. How much of the screen it fills depends on its size (`viewFor` in `Board`): about 35-40% for small notes, rising to about 92% for big sections and maps. Cards are drawn untilted at `STRAIGHT_SCALE` (0.3, where route notes appear) and above, because a tilted card is resampled by the compositor and its text goes soft. `Board` works out what the camera is "in" (the deepest visible item under the middle of the screen that fills half the view); that drives the breadcrumb, the Up button and where `+ Note` etc. add new items.
+Double-click an item (or "Zoom to" in the panel) animates the camera to it. How much of the screen it fills depends on its size (`viewFor` in `Board`): about 35-40% for small notes, rising to about 92% for big sections and maps. Cards never tilt (`STRAIGHT_SCALE` is 0), because a tilted card is resampled by the compositor and its text goes soft. `Board` works out what the camera is "in" (the deepest visible item under the middle of the screen that fills half the view); that drives the breadcrumb, the Up button and where `+ Note` etc. add new items.
 
 ## 5. Gestures (`Board.tsx`)
 
